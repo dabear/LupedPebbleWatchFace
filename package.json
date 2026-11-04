@@ -1,65 +1,19 @@
 {
-  "name": "crimsonbear-cgm",
-  "author": "CrimsonBear Cgm contributors",
+  "name": "luped-pebble-build",
   "version": "2.2.21",
   "private": true,
-  "description": "A bear-themed CGM watchface for Pebble Time 2 and newer watches",
+  "description": "Build tooling for the Luped CGM Pebble watchface (the watchface's own package is variants/luped/package.json)",
   "license": "MIT",
-  "keywords": [
-    "pebble-app",
-    "watchface",
-    "cgm",
-    "nightscout"
-  ],
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "eslint src/**/*.js",
+    "lint": "eslint --env node \"scripts/*.cjs\"",
+    "test": "node scripts/test-luped-signing.cjs && node scripts/test-luped-warnings.cjs",
     "release": "./scripts/build-release.sh"
   },
   "devDependencies": {
     "eslint": "^8.57.1",
     "prettier": "^3.6.2",
     "terser": "^5.51.2"
-  },
-  "pebble": {
-    "displayName": "CrimsonBear Cgm",
-    "uuid": "8d99f626-1199-4a60-ace8-70829b9755e4",
-    "projectType": "moddable",
-    "sdkVersion": "3",
-    "enableMultiJS": true,
-    "targetPlatforms": [
-      "emery",
-      "gabbro"
-    ],
-    "watchapp": {
-      "watchface": true
-    },
-    "capabilities": [
-      "configurable"
-    ],
-    "messageKeys": [
-      "COMMAND",
-      "DATA",
-      "ERROR",
-      "CONFIGURED",
-      "DIAGNOSTICS"
-    ],
-    "resources": {
-      "media": [
-        {
-          "type": "bitmap",
-          "name": "IMAGE_MENU_ICON",
-          "file": "images/crimsonbear-menu-icon.png",
-          "menuIcon": true,
-          "targetPlatforms": [
-            "emery",
-            "gabbro"
-          ],
-          "memoryFormat": "SmallestPalette",
-          "spaceOptimization": "storage"
-        }
-      ]
-    }
   }
 }

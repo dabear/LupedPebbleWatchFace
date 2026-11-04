@@ -1,12 +1,10 @@
-# CrimsonBear Cgm
+# Luped CGM
 
-<p align="center">
-  <img src="assets/crimsonbear-teddy.png" alt="CrimsonBear teddy logo" width="180">
-</p>
-
-A crimson, pulse-line glucose watchface for Pebble Time 2 and newer hardware. It shows current glucose in a circle, bold solid-head trend arrows (including double arrows for rapid changes), delta, a 12-reading graph, date/time, and battery using the current Alloy embedded JavaScript runtime.
-
-[Install CrimsonBear Cgm from the Pebble App Store](https://apps.rePebble.com/ebc3f63147e6481599da4b8e)
+A Loop-styled glucose watchface for Pebble Time 2 and Pebble Round 2. It shows
+the current glucose in a ring with a trend arrow, the change since the last
+reading, and either a 12-reading graph with insulin and carbs on board and the
+loop status, or a full-screen ring, plus date, time and battery. It uses the
+Alloy embedded JavaScript runtime.
 
 <table align="center">
   <tr>
@@ -14,127 +12,61 @@ A crimson, pulse-line glucose watchface for Pebble Time 2 and newer hardware. It
     <th>Full-screen mode</th>
   </tr>
   <tr>
-    <td><img src="assets/emery_graph_screenshot.png" alt="CrimsonBear Cgm graph mode on Pebble Time 2" width="200"></td>
-    <td><img src="assets/emery_fullscreen_screenshot.png" alt="CrimsonBear Cgm full-screen mode on Pebble Time 2" width="200"></td>
+    <td><img src="assets/emery_luped_graph_screenshot.png" alt="Luped CGM graph mode on Pebble Time 2" width="200"></td>
+    <td><img src="assets/emery_luped_fullscreen_screenshot.png" alt="Luped CGM full-screen mode on Pebble Time 2" width="200"></td>
   </tr>
 </table>
 
-On first launch, the watch displays a setup notice only after the phone confirms that configuration is missing. During the initial phone handshake it shows a neutral connecting state.
+Luped needs a direct watch connection from a supported iPhone app such as Loop
+or Trio. It has no PebbleKit JS companion and no settings page in the Pebble
+app, and it does not fetch glucose on its own: the iPhone app sends readings,
+alert settings and status to the watch. The watchface is informational and must
+not be used on its own to make treatment decisions; it is not medical advice.
 
 ## Supported watches
 
 - Pebble Time 2 (`emery`, 200×228)
 - Pebble Round 2 (`gabbro`, 260×260)
 
-Older platforms are deliberately excluded. The layout uses the unobstructed screen size and adapts to rectangular and round displays.
+## Build
 
-## Data sources
-
-- Nightscout: enter the site root URL and, for protected sites, an access token/API secret.
-- mg/dL and mmol/L display modes, with configurable urgent-low, low, and high
-  thresholds. Vibration alarms have independent low/high snooze intervals, alarm
-  immediately when severity escalates, and can be disabled in settings.
-
-Credentials remain in the Pebble phone companion's local storage and are sent only to the selected CGM service. This watchface is informational and must not be used to make treatment decisions.
-
-## Quick build
-
-You need Python 3.10, Node.js, [`uv`](https://docs.astral.sh/uv/), and a working ARM toolchain. Then run:
+You need Python 3.10, Node.js, [`uv`](https://docs.astral.sh/uv/), and a
+working ARM toolchain:
 
 ```sh
 uv tool install --python 3.10 pebble-tool
 pebble sdk install latest
-git clone git@github.com:dabear/CrimsonBearPebbleWatchFace.git
-cd CrimsonBearPebbleWatchFace
-npm install
-pebble build
+npm ci
+PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --build --minify
 ```
 
-The finished package is written to `build/pebble.pbw`.
+The package is written to `build/luped-cgm.pbw`. The root `package.json` only
+holds the build tooling (ESLint, Prettier, Terser); the watchface's own Pebble
+package is [`variants/luped/package.json`](variants/luped/package.json).
 
-## Install
-
-Enable Developer Connection in the Pebble phone app, then run:
-
-```sh
-pebble install build/pebble.pbw --phone
-```
-
-To build and install on the Time 2 emulator instead:
-
-```sh
-pebble install build/pebble.pbw --emulator emery
-```
-
-Open the watchface settings from the Pebble mobile app to configure a CGM source. The settings UI is bundled as a self-contained data URL, so it has no hosting dependency.
-
-## Release
-
-Run without arguments to choose build, phone installation, and publication
-interactively:
-
-```sh
-PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh
-```
-
-Flags run non-interactively and can be combined. For example:
+Run without arguments to choose the variant, build, phone installation and
+publication interactively. Flags run non-interactively and can be combined:
 
 ```sh
 PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --build --install
-PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --build --minify
 PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --build --minify --skip-deps
+PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --build --install --measure-memory
 PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --publish --release-notes "Release notes"
-PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --build --install --publish --release-notes "Release notes"
 ```
 
-Build and publish actions install locked dependencies and run lint and formatting
-checks. Publishing additionally requires a clean `main`, confirms it contains
-`origin/main`, pushes the exact commit to GitHub, and publishes to the RePebble
-store. Existing store screenshots are preserved. If release notes are omitted in
-flag mode, the latest commit subject is used. `--publish` does not install on a
-phone and does not require `--build`; the Pebble publisher performs its own required
-package build before upload.
+`--install` installs on the connected phone (`--cloudpebble` installs through
+CloudPebble instead). Build and publish actions install locked dependencies and
+run lint and formatting checks; `npm test` runs the watch-code tests. Publishing
+requires a clean `main`, pushes it to GitHub, publishes to the RePebble store and
+creates a GitHub release.
 
-For faster repeated local builds, `--skip-deps` reuses `node_modules` only when
-`npm ls` succeeds and npm's installed lock data exactly matches `package-lock.json`.
-It fails with instructions to run `npm ci` if dependencies are missing, invalid,
-or stale. Publishing never permits this shortcut and always performs clean
-dependency validation.
-
-Pass `--minify` with `--build` or `--publish` to run Terser's safe compression
-and internal identifier mangling over the generated watch modules and staged
-PebbleKit JS companion modules. Property
-mangling is restricted to an explicit allowlist of private watchface methods.
-AppMessage keys, state and diagnostic fields, compact payload positions, command
-strings, Pebble/renderer APIs, and exported protocol names remain compatible with
-PebbleKit JS and the future mobile-app protocol. Interactive mode offers the same
-choice.
-
-## Build variants
-
-The repository also builds the standalone **Luped CGM** variant. Variant
-selection happens before the Moddable bytecode compile, so Luped does not carry
-CrimsonBear branding, bear drawing code, periodic glucose refresh logic, or the
-PebbleKit JS Nightscout/settings companion.
-
-```sh
-PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --variant crimsonbear --build
-PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --variant luped --build
-```
-
-Luped needs a direct watch connection from a supported iPhone app such as Loop
-or Trio; it has no PebbleKit JS companion and does not fetch glucose on its own.
-Add `--install` to install the selected build (`--cloudpebble` installs through
-CloudPebble instead of the connected phone), or `--publish` to publish the
-selected variant to the RePebble store.
-
-Every build lists the memory limits: the Alloy archive size against its guard,
-the XS machine the C stub asks for (the default 32 KB static block, or Luped's
-52 KB from the app heap), and every module in the archive, flagging any the
-watchface does not import. `--install --measure-memory` builds with the
-firmware's memory counters, restarts the watchface with logs on, prints its XS
-memory on the watch, then restarts it without them (the counters wake the watch
-every second; never publish that build), for example:
+Every build lists the XS machine the C stub asks for (52 KB from the app heap)
+and every module in the archive, flagging any the watchface does not import.
+What runs out first is XS memory, not the archive size: `--install
+--measure-memory` builds with the firmware's memory counters, restarts the
+watchface with logs on, prints its XS memory on the watch, then restarts it
+without them (the counters wake the watch every second; never publish that
+build), for example:
 
 ```text
 XS memory on the watch (peak of 15 samples; used includes garbage not yet collected):
@@ -144,26 +76,28 @@ XS memory on the watch (peak of 15 samples; used includes garbage not yet collec
   app heap free for PebbleOS: 28748 B
 ```
 
-What runs out first is the XS machine, not the archive size; see AGENTS.md. Luped is
-written to `build/luped-cgm.pbw`; CrimsonBear remains `build/pebble.pbw`. The
-variants have independent UUIDs and can be installed together. The mobile
-integration contract is documented in
-[`variants/luped/PROTOCOL.md`](variants/luped/PROTOCOL.md).
+## Variants
 
-The shell script selects
-[`variants/crimsonbear/watchface-config.json`](variants/crimsonbear/watchface-config.json)
-or [`variants/luped/watchface-config.json`](variants/luped/watchface-config.json),
-then uses the repository's existing Node.js runtime to assemble
-[`src/embeddedjs/main.js.in`](src/embeddedjs/main.js.in) in the isolated build
-directory. Explicit compile-time sections include only the chosen palette, text,
-ring rendering and glucose timer policy. There is no C-preprocessor dependency,
-source-text search-and-replace, or runtime variant module overhead.
+The script assembles [`src/embeddedjs/main.js.in`](src/embeddedjs/main.js.in)
+for a variant, selected with `--variant` (default `luped`), using the palette,
+text and compile-time flags in `variants/<variant>/watchface-config.json`. Lines
+between `// @if <flag>`, `// @else` and `// @endif` are kept or dropped before the
+Moddable bytecode compile, so there is no runtime variant overhead. Each variant
+also has its own `package.json` (name, UUID, version), `wscript`, Moddable
+manifest, C stub and menu icon under `variants/<variant>/`.
 
-`allowShakeDebugActionTestOnly` (Luped only, `false` in both configs) is for
-test builds: set to `true`, a shake sends a fixed watch request
-(`SHAKE_DEBUG_ACTION` in `main.js.in`: `mute:30`, or a signed bolus such as
-`signedforcedbolus:0.1:1`). `--publish` refuses to run while it is on.
+`allowShakeDebugActionTestOnly` (`false`) is for test builds: set to `true`, a
+shake sends a fixed watch request (`SHAKE_DEBUG_ACTION` in `main.js.in`:
+`mute:30`, or a signed bolus such as `signedforcedbolus:0.1:1`). `--publish`
+refuses to run while it is on.
 
-## Development notes
+## Protocol and attribution
 
-The shared watch code is in `src/embeddedjs/main.js.in`; phone networking and configuration are in `src/pkjs/index.js`. The watch owns ongoing CGM polling: it requests when the displayed reading reaches five minutes old, retries once at six minutes if the reading timestamp has not advanced, then throttles continued stale-reading retries to five-minute intervals. A new reading resets that sequence. The phone performs one startup fetch when PebbleKit JS becomes ready but runs no polling scheduler. Sensor reading age is calculated locally every minute for refresh and stale-state behavior. Minute, battery, and duplicate-data updates use coalesced partial redraws to reduce display work and avoid overlapping Alloy output transactions.
+- The mobile integration contract is documented in
+  [`variants/luped/PROTOCOL.md`](variants/luped/PROTOCOL.md).
+- Palette and icon sources are credited in
+  [`variants/luped/ATTRIBUTION.md`](variants/luped/ATTRIBUTION.md).
+
+Luped started as a variant of
+[CrimsonBear Cgm](https://github.com/dabear/CrimsonBearPebbleWatchFace), a
+Nightscout watchface, and shares its history.
