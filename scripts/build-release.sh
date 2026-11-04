@@ -401,6 +401,11 @@ if [[ "$do_publish" == true ]]; then
     echo "allowShakeDebugActionTestOnly is on in variants/$variant/watchface-config.json; turn it off before publishing." >&2
     exit 1
   fi
+  # The demo test build shows sample data and answers its own requests.
+  if node -e "process.exit(require('./variants/$variant/watchface-config.json').demoTestOnly ? 0 : 1)"; then
+    echo "demoTestOnly is on in variants/$variant/watchface-config.json; turn it off before publishing." >&2
+    exit 1
+  fi
   if ! command -v gh >/dev/null; then
     echo "Publishing also creates a GitHub release: install and log in to the GitHub CLI (gh)." >&2
     exit 1

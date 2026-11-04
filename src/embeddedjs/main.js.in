@@ -20,6 +20,21 @@ import Button from "pebble/button";
 // of this is built in.
 const SHAKE_DEBUG_ACTION = "mute:30";
 // @endif
+// @if demoTestOnly
+// Test builds only (demoTestOnly in watchface-config.json, Luped Remote only):
+// no phone needed. Sample data and a test bolus key arrive at startup, the
+// phone always counts as connected, and every request gets an "ok" answer
+// after 3 s instead of being sent. Off, none of this is built in.
+function demoReceive(face, entries) {
+  const real = face.message;
+  face.message = { read: () => entries };
+  try {
+    face.readMessages();
+  } finally {
+    face.message = real;
+  }
+}
+// @endif
 
 // @if helper
 // Luped Remote (the lupedhelper variant) is a watchapp, so it gets the buttons.
@@ -398,6 +413,18 @@ class CrimsonBearWatchface {
       if (buzz && buzz[3] < 0 && this.coveredAt - buzz[2] < 4700)
         buzz[3] = this.coveredAt - buzz[2] || 1;
     });
+    // @endif
+    // @if demoTestOnly
+    setTimeout(() => {
+      const now = Date.now();
+      const readings = [5.4, 5.5, 5.7, 5.8, 6, 6.1, 6.2, 6.3, 6.5, 6.6, 6.7, 6.8];
+      const data = [1, 6.8, 0.2, 3, readings, 1, now, 0, 0, 0, 1.25, 12, now - 120000, 1, null, "test data"];
+      demoReceive(this, [
+        ["CONFIGURED", 1],
+        ["COMMAND", "auth:v1:test:000102030405060708090a0b0c0d0e0f"],
+        ["DATA", JSON.stringify(data)],
+      ]);
+    }, 500);
     // @endif
     watch.addEventListener("resize", () => {
       this.hasRenderedConfiguredFace = false;
@@ -847,7 +874,12 @@ class CrimsonBearWatchface {
     const center = width >> 1;
     this.render.fillRectangle(this.colors.ink, 0, 0, width, height);
     this.text("CONNECTING", this.fonts.delta, this.colors.white, center, 84, true);
+    // @if helper
+    this.text("Waiting for CGM from", this.fonts.label, this.colors.pale, center, 122, true);
+    this.text("Loop, Trio or similar", this.fonts.label, this.colors.pale, center, 144, true);
+    // @else
     this.text("Waiting for CGM", this.fonts.label, this.colors.pale, center, 122, true);
+    // @endif
   }
 
   // Shared status and age elements
@@ -879,6 +911,8 @@ class CrimsonBearWatchface {
       if (this.view === "amount") this.helperAmount(width, top);
       else if (this.view === "confirm") this.helperConfirm(width, top);
       else if (this.view === "settings") this.helperSettings(width, top);
+      else if (this.view === "sending" && this.pending) this.helperSending(width, top);
+      else if (this.view === "result" && this.result) this.helperOutcome(width, top);
       else this.helperMain(width, top);
     }
     this.helperHeader(width, header);
@@ -905,18 +939,20 @@ class CrimsonBearWatchface {
     }
   }
 
-  // The clock and the seconds left before the app closes, over a thin bar that
-  // shrinks with them (amber and full while a request waits for the phone).
+  // The clock (not on round, whose top is too narrow for both) and the seconds
+  // left before the app closes, over a thin bar that shrinks with them (amber
+  // and full while a request waits for the phone).
   helperHeader(width, header) {
     const { ink, white } = this.colors;
-    const now = new Date();
-    const clock = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-    const left = this.pending ? "wait" : `${this.secondsLeft}s`;
+    const left = this.pending ? "Auto exit paused" : `Auto exit ${this.secondsLeft}s`;
     const y = header - 20;
-    const inset = screen.round ? 66 : 6;
     this.render.fillRectangle(ink, 0, 0, width, header);
-    this.text(clock, this.fonts.bold, white, inset, y);
-    this.text(left, this.fonts.bold, white, width - inset - this.render.getTextWidth(left, this.fonts.bold), y);
+    if (screen.round) this.text(left, this.fonts.bold, white, width >> 1, y, true);
+    else {
+      const now = new Date();
+      this.text(`${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`, this.fonts.bold, white, 6, y);
+      this.text(left, this.fonts.bold, white, width - 6 - this.render.getTextWidth(left, this.fonts.bold), y);
+    }
     const barWidth = this.pending ? width : Math.round((width * this.secondsLeft) / AUTO_CLOSE_SECONDS);
     this.render.fillRectangle(this.pending ? this.colors.high : this.colors.crimson, 0, header - 3, barWidth, 3);
   }
@@ -979,7 +1015,9 @@ class CrimsonBearWatchface {
         this.render.fillRectangle(ink, margin, rowY, width - 2 * margin, 28);
         this.render.fillRectangle(this.colors.crimson, margin, rowY, 5, 28);
       }
-      this.text(actions[index].label, this.fonts.fullLabel, selected ? white : ink, cx, rowY, true);
+      // Remote actions are dimmed (and refused) without a phone connection.
+      const usable = this.isConnected || actions[index].id === "settings";
+      this.text(actions[index].label, this.fonts.fullLabel, !usable ? this.colors.dim : selected ? white : ink, cx, rowY, true);
     }
     const chevronX = width - margin - 10;
     if (first > 0) this.helperChevron(chevronX, listY + 9, -1, this.colors.graph);
@@ -1000,10 +1038,79 @@ class CrimsonBearWatchface {
     this.text(fraction, font, this.colors.ink, left + wholeWidth + 9, y);
   }
 
-  // A title band under the header, in ink or (for a bolus) amber.
+  // A title band under the header: ink, amber (a bolus) or red (not done).
   helperTitle(width, top, title, color = this.colors.ink) {
     this.render.fillRectangle(color, 0, top - 2, width, 30);
-    this.text(title, this.fonts.fullLabel, color === this.colors.ink ? this.colors.white : this.colors.ink, width >> 1, top - 1, true);
+    this.text(title, this.fonts.fullLabel, color === this.colors.high ? this.colors.ink : this.colors.white, width >> 1, top - 1, true);
+  }
+
+  // While a request waits for the phone's answer: what was sent and a wheel.
+  helperSending(width, top) {
+    const cx = width >> 1;
+    const { ink } = this.colors;
+    this.helperTitle(width, top, "Sending", this.pending.action === "bolus" ? this.colors.high : ink);
+    this.pending.lines.forEach((line, index) =>
+      this.text(line.replace("?", ""), this.fonts.fullLabel, ink, cx, top + 34 + index * 26, true)
+    );
+    this.helperWheelFill();
+    this.text("Waiting for the phone", this.fonts.bold, ink, cx, top + 150, true);
+    this.text("Back: hide", this.fonts.bold, ink, cx, top + 182, true);
+  }
+
+  // The wheel's centre and radius on the sending screen.
+  helperWheel() {
+    return [this.render.width >> 1, this.helperHeaderHeight() + (screen.round ? 4 : 2) + 120, 16];
+  }
+
+  // A ring with a dark quarter that moves on by 30° every 100 ms.
+  helperWheelFill() {
+    const [cx, cy, r] = this.helperWheel();
+    const start = this.wheelAngle || 0;
+    this.render.fillRectangle(this.colors.pale, 0, cy - r - 1, this.render.width, 2 * r + 2);
+    this.render.drawCircle(this.colors.panel, cx, cy, r, 0, 360);
+    this.render.drawCircle(this.colors.ink, cx, cy, r, start, start + 90);
+    this.render.drawCircle(this.colors.pale, cx, cy, r - 5, 0, 360);
+  }
+
+  // Turns the wheel, repainting only its strip; stops once the answer is in.
+  helperSpin() {
+    if (!this.pending || this.view !== "sending") {
+      clearInterval(this.wheelTimer);
+      this.wheelTimer = null;
+      return;
+    }
+    this.wheelAngle = ((this.wheelAngle || 0) + 30) % 360;
+    const [, cy, r] = this.helperWheel();
+    let began = false;
+    try {
+      this.render.begin(0, cy - r - 1, this.render.width, 2 * r + 2);
+      began = true;
+      this.helperWheelFill();
+      began = false;
+      this.render.end();
+    } catch (_) {
+      if (began) this.render.end();
+    }
+  }
+
+  // The phone's answer (or why there is none): done or not, and what.
+  helperOutcome(width, top) {
+    const cx = width >> 1;
+    const cy = top + 66;
+    const [action, outcome = ""] = this.result.split(":");
+    const ok = outcome === "ok";
+    this.helperTitle(width, top, ok ? "Done" : "Not done", ok ? this.colors.ink : this.colors.low);
+    if (ok) {
+      this.render.drawLine(cx - 22, cy, cx - 6, cy + 16, this.colors.crimson, 7);
+      this.render.drawLine(cx - 6, cy + 16, cx + 22, cy - 14, this.colors.crimson, 7);
+    } else {
+      this.render.drawLine(cx - 16, cy - 16, cx + 16, cy + 16, this.colors.low, 7);
+      this.render.drawLine(cx - 16, cy + 16, cx + 16, cy - 16, this.colors.low, 7);
+    }
+    const label = (ACTIONS.find((item) => item.id === action) || { label: action }).label;
+    this.text(label, this.fonts.fullLabel, this.colors.ink, cx, top + 96, true);
+    this.text(ok ? "The phone carried it out" : outcome, this.fonts.bold, this.colors.ink, cx, top + 126, true);
+    this.text("Select: OK", this.fonts.bold, this.colors.ink, cx, top + 182, true);
   }
 
   helperAmount(width, top) {
@@ -1181,6 +1288,10 @@ class CrimsonBearWatchface {
     } else if (view === "confirm") {
       // Select alone doesn't send: only the three-button chord (helperRaw).
       if (back) this.view = "main";
+    } else if (view === "sending" || view === "result") {
+      // Back hides the wheel (the status line still shows the wait); Select
+      // or Back closes the answer.
+      if (back || (select && view === "result")) this.view = "main";
     } else if (view === "settings") {
       const item = SETTINGS[this.settingIndex];
       if (this.editing == null) {
@@ -1211,8 +1322,9 @@ class CrimsonBearWatchface {
       this.editing = null;
       return;
     }
-    // One request at a time: the next waits for this one's answer.
-    if (this.pending) {
+    // No remote action without a phone connection (the status line says so),
+    // and one request at a time: the next waits for this one's answer.
+    if (!this.isConnected || this.pending) {
       Vibes.doublePulse();
       return;
     }
@@ -1242,15 +1354,25 @@ class CrimsonBearWatchface {
   // Sends the confirmed request (PROTOCOL.md, COMMAND); a bolus only signed,
   // with the phone's session key, and only while Allow bolus is on.
   helperSend() {
-    const { action, command } = this.confirmation;
-    this.view = "main";
+    const { action, command, lines } = this.confirmation;
+    this.view = "result";
     this.confirmation = null;
+    // The connection may have dropped while the confirmation showed.
+    if (!this.isConnected) {
+      this.result = `${action}:not sent, no phone`;
+      this.resultUntil = Date.now() + 60000;
+      Vibes.doublePulse();
+      return;
+    }
     if (action === "bolus" && (!setting("allowBolus") || !this.bolusAuth)) {
-      if (setting("allowBolus")) this.requestSignedBolus(command); // shows "bolus: no key"
+      if (setting("allowBolus")) this.requestSignedBolus(command); // "bolus: no key"
+      else this.view = "main";
       return;
     }
     this.result = null;
-    this.pending = { action, until: Date.now() + RESULT_TIMEOUT_MS };
+    this.view = "sending";
+    this.pending = { action, lines, until: Date.now() + RESULT_TIMEOUT_MS };
+    if (!this.wheelTimer) this.wheelTimer = setInterval(() => this.helperSpin(), 100);
     if (action === "bolus") this.requestSignedBolus(command);
     else {
       this.bolusCommand = `${command}@${Math.floor(Date.now() / 1000)}`;
@@ -1271,6 +1393,7 @@ class CrimsonBearWatchface {
       this.result = `${this.pending.action}:${sent ? "no answer, check phone" : "not sent"}`;
       this.resultUntil = now + 60000;
       this.pending = null;
+      this.view = "result";
       this.secondsLeft = Math.max(this.secondsLeft, 15);
       Vibes.doublePulse();
     }
@@ -1818,6 +1941,9 @@ class CrimsonBearWatchface {
   }
 
   setPhoneConnected(connected) {
+    // @if demoTestOnly
+    connected = true;
+    // @endif
     if (connected === this.isConnected) {
       if (connected) this.flushOutbound();
       return;
@@ -1888,6 +2014,14 @@ class CrimsonBearWatchface {
 
   // @endif
   flushOutbound() {
+    // @if demoTestOnly
+    const request = this.bolusCommand;
+    this.bolusCommand = null;
+    this.refreshPending = false;
+    // "mute:30@…" answers "mute:ok", "signedbolus:0.5@…#…" "bolus:ok".
+    // Nothing is left pending, so the real send below returns at once.
+    if (request) setTimeout(() => demoReceive(this, [["RESULT", `${request.split(":")[0].replace("signed", "")}:ok`]]), 3000);
+    // @endif
     // @if helper
     if ((!this.refreshPending && !this.bolusCommand) || !this.message) return;
     // @else
@@ -2170,7 +2304,9 @@ class CrimsonBearWatchface {
         else Vibes.doublePulse();
         needsFullDraw = true;
         // @if helper
-        // The answer ends the wait; leave time to read it before closing.
+        // The answer ends the wait: show it (the buzz above tells the wearer),
+        // and leave time to read it before closing.
+        if (this.pending) this.view = "result";
         this.pending = null;
         this.secondsLeft = Math.max(this.secondsLeft, 15);
         // @endif
