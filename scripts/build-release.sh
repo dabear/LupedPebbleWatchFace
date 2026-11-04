@@ -529,6 +529,9 @@ if [[ "$do_publish" == true ]]; then
       --release-notes "$release_notes"
   )
 
+  # Release the PBW the store just got (pebble publish builds the stage); the
+  # artifact in build/ may be older, such as a test build left there.
+  cp "$stage/build/project.pbw" "$artifact"
   echo "Creating GitHub release $release_tag..."
   gh release create "$release_tag" "$artifact" \
     --target "$(git rev-parse HEAD)" \
