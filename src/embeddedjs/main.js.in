@@ -1,7 +1,10 @@
 import Poco from "commodetto/Poco";
 import Message from "pebble/message";
 import Vibes from "pebble/vibes";
+// @if helper
+// @else
 import Battery from "embedded:sensor/Battery";
+// @endif
 // @if allowShakeDebugActionTestOnly
 import Accelerometer from "embedded:sensor/Accelerometer";
 // @endif
@@ -205,14 +208,16 @@ function bolusMac(key, canonical) {
   return bytesHex(hmacSha256(key, asciiBytes(canonical)).subarray(0, 16));
 }
 
+// @if helper
+// Luped Remote runs for a minute at a time, so it has no battery sampling,
+// diagnostics or telemetry: its code alone takes app heap from PebbleOS.
+// @else
 const BATTERY_SAMPLE_INTERVAL_MS = 5 * 60 * 1000;
 const DIAGNOSTICS_INTERVAL_MS = 60 * 60 * 1000;
 // Grace period to let diagnostics ride an already-outgoing message before
 // forcing a dedicated radio wake-up for telemetry alone.
 const DIAGNOSTICS_PIGGYBACK_GRACE_MS = 15 * 60 * 1000;
 
-// @if helper
-// @else
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // @endif
 
@@ -318,6 +323,8 @@ class CrimsonBearWatchface {
     this.lastRefreshRequestedAt = 0;
     this.refreshStartedAt = 0;
     this.isConnected = false;
+    // @if helper
+    // @else
     this.phoneDisconnectedAt = 0;
     this.telemetryPending = false;
     this.telemetryDueAt = 0;
@@ -326,6 +333,7 @@ class CrimsonBearWatchface {
     this.lastMinuteEventAt = 0;
     this.startupId = Date.now();
     this.diagnostics = this.newDiagnostics();
+    // @endif
     this.hasRenderedConfiguredFace = false;
     // @if helper
     this.view = "main";
@@ -345,7 +353,10 @@ class CrimsonBearWatchface {
 
   start() {
     this.draw();
+    // @if helper
+    // @else
     this.startBatteryService();
+    // @endif
     this.startMessageService();
     watch.addEventListener("connected", () => this.checkConnection());
     this.checkConnection();
@@ -376,7 +387,7 @@ class CrimsonBearWatchface {
       onPush: (pushed, button) => this.helperRaw(pushed, button),
     });
     watch.addEventListener("secondchange", () => this.helperTick());
-    // @endif
+    // @else
     // A system pop-up (notification, alarm, call) covering the watchface. A
     // buzz it covers within its 4.7 s gets the delay as its outcome.
     watch.addEventListener("willFocus", (focused) => {
@@ -387,6 +398,7 @@ class CrimsonBearWatchface {
       if (buzz && buzz[3] < 0 && this.coveredAt - buzz[2] < 4700)
         buzz[3] = this.coveredAt - buzz[2] || 1;
     });
+    // @endif
     watch.addEventListener("resize", () => {
       this.hasRenderedConfiguredFace = false;
       this.lastRenderedFullScreen = null;
@@ -438,6 +450,13 @@ class CrimsonBearWatchface {
 
   // Runtime diagnostics
 
+  // @if helper
+  // None in Luped Remote; shared code still counts.
+  countDiagnostic() {}
+
+  recordDraw() {}
+
+  // @else
   newDiagnostics() {
     return {
       startedAt: Date.now(),
@@ -571,6 +590,7 @@ class CrimsonBearWatchface {
     this.phoneDisconnectedAt = this.isConnected ? 0 : Date.now();
   }
 
+  // @endif
   // Glucose and trend drawing primitives
 
   drawGlucose(cx, y, font = this.fonts.glucose) {
@@ -1581,6 +1601,8 @@ class CrimsonBearWatchface {
     if (this.hostChange || this.newProtocol) vibe();
     const date = event && event.date ? event.date : new Date();
     const now = date.getTime();
+    // @if helper
+    // @else
     this.ensureDiagnosticsWindow();
     if (this.lastMinuteEventAt) {
       const late = Math.max(0, now - this.lastMinuteEventAt - 60000);
@@ -1592,12 +1614,15 @@ class CrimsonBearWatchface {
       if (late >= 1000) this.countDiagnostic("lateMinuteEvents");
     }
     this.lastMinuteEventAt = now;
+    // @endif
     // A request's outcome shows for a minute (or until the next reading), so a
     // CGM gap can't leave it on screen.
     if (this.result && now >= this.resultUntil) {
       this.result = null;
       this.requestRender(3);
     }
+    // @if helper
+    // @else
     if (now - this.lastBatterySampleAt >= BATTERY_SAMPLE_INTERVAL_MS) {
       this.updateBattery();
       this.lastBatterySampleAt = now;
@@ -1613,6 +1638,7 @@ class CrimsonBearWatchface {
       now - this.telemetryDueAt >= DIAGNOSTICS_PIGGYBACK_GRACE_MS
     )
       this.flushOutbound();
+    // @endif
     const staleChanged = this.updateStaleState(now);
     this.requestRender(staleChanged ? 3 : 2, 0, date);
   }
@@ -1731,6 +1757,8 @@ class CrimsonBearWatchface {
   // @endif
   // Watch hardware services
 
+  // @if helper
+  // @else
   startBatteryService() {
     try {
       // Sample on the existing minute wake-up rather than keeping a battery
@@ -1751,6 +1779,7 @@ class CrimsonBearWatchface {
     return true;
   }
 
+  // @endif
   // Watch-to-phone messaging
 
   startMessageService() {
@@ -1774,11 +1803,14 @@ class CrimsonBearWatchface {
     this.flushOutbound();
   }
 
+  // @if helper
+  // @else
   requestDiagnostics() {
     this.telemetryPending = true;
     this.flushOutbound();
   }
 
+  // @endif
   checkConnection() {
     const isConnected = Boolean(watch.connected && watch.connected.app);
     console.log(`Connected: ${isConnected}`);
@@ -1790,6 +1822,10 @@ class CrimsonBearWatchface {
       if (connected) this.flushOutbound();
       return;
     }
+    // @if helper
+    this.isConnected = connected;
+    if (connected) this.flushOutbound();
+    // @else
     const now = Date.now();
     this.isConnected = connected;
     if (connected) {
@@ -1807,6 +1843,7 @@ class CrimsonBearWatchface {
       this.phoneDisconnectedAt = now;
       this.countDiagnostic("phoneDisconnects");
     }
+    // @endif
     this.requestRender(2);
   }
 
@@ -1851,16 +1888,25 @@ class CrimsonBearWatchface {
 
   // @endif
   flushOutbound() {
+    // @if helper
+    if ((!this.refreshPending && !this.bolusCommand) || !this.message) return;
+    // @else
     if ((!this.refreshPending && !this.telemetryPending && !this.bolusCommand) || !this.message)
       return;
+    // @endif
     const values = [];
     // A bolus request takes the COMMAND key; a pending refresh follows it.
     const bolus = this.bolusCommand;
     if (bolus || this.refreshPending) values.push(["COMMAND", bolus || "refresh"]);
+    // @if helper
+    // @else
     if (this.telemetryPending)
       values.push(["DIAGNOSTICS", JSON.stringify(this.diagnosticsSnapshot())]);
+    // @endif
     try {
       this.message.write(new Map(values));
+      // @if helper
+      // @else
       this.countDiagnostic("outgoingMessages");
       this.addDiagnostic(
         "outgoingBytes",
@@ -1869,6 +1915,7 @@ class CrimsonBearWatchface {
           0
         )
       );
+      // @endif
       if (bolus) this.bolusCommand = null;
       else
       if (this.refreshPending) {
@@ -1877,10 +1924,13 @@ class CrimsonBearWatchface {
         this.refreshStartedAt = this.lastRefreshRequestedAt;
         this.countDiagnostic("refreshRequests");
       }
+      // @if helper
+      // @else
       if (this.telemetryPending) {
         this.telemetryPending = false;
         this.lastTelemetrySentAt = Date.now();
       }
+      // @endif
     } catch (_) {
       // Alloy turns writes off whenever the phone's app session (Loop's, not the
       // Pebble app's) opens or closes, and only a new Message turns them back on.
@@ -1906,10 +1956,13 @@ class CrimsonBearWatchface {
     const age =
       Number.isFinite(updated) && updated > 0 ? Math.max(0, now - updated) : 0;
     const stale = age >= 15 * 60 * 1000;
+    // @if helper
+    // @else
     if (stale) {
       this.ensureDiagnosticsWindow();
       this.diagnostics.staleAgeMaxMs = Math.max(this.diagnostics.staleAgeMaxMs, age);
     }
+    // @endif
     if (stale === this.stale) return false;
 
     this.stale = stale;
@@ -1973,6 +2026,11 @@ class CrimsonBearWatchface {
 
   checkHostAlert() {
     const event = this.state.alertEvent;
+    // @if helper
+    // The same buzz as Luped, without its buzz history.
+    if (this.lastAlertEvent !== undefined && event !== this.lastAlertEvent && this.state.hostAlertState > 0)
+      vibe();
+    // @else
     if (this.lastAlertEvent !== undefined && event !== this.lastAlertEvent) {
       if (this.state.hostAlertState > 0) {
         const buzz = [event, this.state.hostAlertState, Date.now(), this.coveredAt ? 0 : -1];
@@ -1989,6 +2047,7 @@ class CrimsonBearWatchface {
         this.countDiagnostic("silentAlertEvents");
       }
     }
+    // @endif
     this.lastAlertEvent = event;
   }
 
@@ -1997,6 +2056,10 @@ class CrimsonBearWatchface {
   readMessages() {
     let receivedData = false;
     let needsFullDraw = false;
+    // @if helper
+    for (const [key, value] of this.message.read()) {
+      if (key === "DATA") {
+        // @else
     let incomingBytes = 0;
     for (const [key, value] of this.message.read()) {
       incomingBytes += String(key).length + String(value).length;
@@ -2013,6 +2076,7 @@ class CrimsonBearWatchface {
           this.recordLatency(this.diagnostics.refreshResponseLatencyBuckets, elapsed);
           this.refreshStartedAt = 0;
         }
+        // @endif
         try {
           // Minimal Luped protocol: [version, glucose, delta, trend, history,
           // unitsFlag, timestamp, fullScreen, hostAlertState, alertEvent, ...].
@@ -2044,7 +2108,11 @@ class CrimsonBearWatchface {
             glucose: values[1],
             delta: values[2],
             direction: LUPED_DIRECTIONS[values[3]] || "Flat",
+            // @if helper
+            // (No graph: the remote leaves the history out.)
+            // @else
             readings: values[4] || [],
+            // @endif
             units: mmol ? "mmol/L" : "mg/dL",
             updated: values[6],
             fullScreen: Boolean(values[7]),
@@ -2119,6 +2187,10 @@ class CrimsonBearWatchface {
         // restart forgets it and the phone sends a new one.
         const [, , sid, keyHex] = value.split(":");
         this.bolusAuth = { sid, key: hmacKey(hexBytes(keyHex)), seq: 0 };
+        // @if helper
+      }
+    }
+    // @else
       } else if (key === "COMMAND" && value === "diagnostics") {
         this.requestDiagnostics();
       } else if (key === "COMMAND" && value === "diagnostics-reset") {
@@ -2127,6 +2199,7 @@ class CrimsonBearWatchface {
     }
     this.countDiagnostic("incomingMessages");
     this.addDiagnostic("incomingBytes", incomingBytes);
+    // @endif
     // Process the response first so reconnect flushing cannot resend a request
     // that this message has already satisfied.
     this.setPhoneConnected(true);
