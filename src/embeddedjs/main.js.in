@@ -811,7 +811,11 @@ class CrimsonBearWatchface {
     this.text(title, this.fonts.delta, this.colors.white, center, 91, true);
     this.text(detail, this.fonts.label, this.colors.white, center, 126, true);
     this.text(action, this.fonts.label, this.colors.white, center, 156, true);
+    // @if helper
+    this.text("app", this.fonts.label, this.colors.white, center, 178, true);
+    // @else
     this.text("watchface", this.fonts.label, this.colors.white, center, 178, true);
+    // @endif
   }
 
   setupScreen(width, height) {

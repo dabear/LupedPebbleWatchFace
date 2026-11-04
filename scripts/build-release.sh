@@ -207,6 +207,8 @@ case "$variant" in
     artifact="build/luped-cgm.pbw"
     display_name="Luped CGM"
     screenshot_prefix="emery_luped"
+    # The two store screenshots: assets/<prefix>_<name>_screenshot.png.
+    screenshot_names=(graph fullscreen)
     store_icon_dir="variants/luped/assets"
     store_icon_prefix="luped"
     store_description="A Loop-styled CGM watchface for Pebble Time 2 and Pebble Round 2. Requires a direct watch connection from a supported iPhone app such as Loop or Trio; the watchface has no Pebble app settings and does not fetch glucose data on its own."
@@ -216,6 +218,7 @@ case "$variant" in
     artifact="build/luped-remote.pbw"
     display_name="Luped Remote"
     screenshot_prefix="emery_lupedhelper"
+    screenshot_names=(main confirm)
     store_icon_dir="variants/lupedhelper/assets"
     store_icon_prefix="lupedhelper"
     store_description="A button-driven remote for Loop on Pebble Time 2 and Pebble Round 2: the latest glucose, IOB and COB, and requests to the phone (mute alerts, add carbs, end an override or temp target, and an optional signed bolus that is off by default), each confirmed on the watch and checked again by the phone. Requires a direct watch connection from a supported iPhone app; it is not medical advice and does not replace the phone app. Tip: on the watch, Settings > Quick Launch > Tap Up > Luped Remote opens it with one press of Up from the watchface."
@@ -517,8 +520,8 @@ if [[ "$do_publish" == true ]]; then
       --non-interactive \
       --no-gif-all-platforms \
       --screenshots \
-        "$repo_root/assets/${screenshot_prefix}_graph_screenshot.png" \
-        "$repo_root/assets/${screenshot_prefix}_fullscreen_screenshot.png" \
+        "$repo_root/assets/${screenshot_prefix}_${screenshot_names[0]}_screenshot.png" \
+        "$repo_root/assets/${screenshot_prefix}_${screenshot_names[1]}_screenshot.png" \
       --replace-screenshots \
       --description "$store_description" \
       --icon-small "$repo_root/$store_icon_dir/$store_icon_prefix-store-icon-small.png" \

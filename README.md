@@ -96,6 +96,13 @@ refuses to run while it is on.
 Luped Remote is a watchapp (not a watchface) built from the same template and
 phone protocol as Luped, so it can use the buttons:
 
+<table>
+  <tr>
+    <td><img src="assets/emery_lupedhelper_main_screenshot.png" alt="Luped Remote main screen on Pebble Time 2" width="200"></td>
+    <td><img src="assets/emery_lupedhelper_confirm_screenshot.png" alt="Luped Remote confirming carbs on Pebble Time 2" width="200"></td>
+  </tr>
+</table>
+
 ```sh
 PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --variant lupedhelper --build --minify
 ```
