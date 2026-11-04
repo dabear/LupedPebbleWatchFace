@@ -963,13 +963,30 @@ class CrimsonBearWatchface {
   helperStatus() {
     if (this.pending) return [`Sent ${this.pending.action}, waiting`, this.colors.high];
     if (this.result) {
-      const [action, outcome = ""] = this.result.split(":");
-      return [`${action}: ${outcome}`, outcome === "ok" ? this.colors.panel : this.colors.low];
+      const [label, ok] = this.helperResultText();
+      return [`${label}: ${ok ? "done" : "not done"}`, ok ? this.colors.panel : this.colors.low];
     }
     if (!this.isConnected) return ["No phone connection", this.colors.low];
     if (this.state.error) return [this.state.error, this.colors.low];
     if (this.stale) return ["No recent CGM data", this.colors.low];
     return [`Connected to ${this.host || "phone"}`, this.colors.panel];
+  }
+
+  // The answer in "<action>:<outcome>" (PROTOCOL.md, RESULT) as the action's
+  // label, whether it was done, and the outcome in words. Loop answers a bolus
+  // as signedbolus.
+  helperResultText() {
+    const [action, outcome = ""] = this.result.split(":");
+    const id = action.replace("signed", "").replace("forced", "");
+    const label = (ACTIONS.find((item) => item.id === id) || { label: action }).label;
+    const words = {
+      ok: "The phone carried it out",
+      refused: "The phone refused it",
+      ignored: "Not offered by the phone",
+      failed: "It failed on the phone",
+      "no key": "Phone doesn't allow it",
+    }[outcome];
+    return [label, outcome === "ok", words || outcome];
   }
 
   // A small triangle pointing up (dir -1) or down (dir 1), for list scrolling.
@@ -1016,8 +1033,9 @@ class CrimsonBearWatchface {
         this.render.fillRectangle(ink, margin, rowY, width - 2 * margin, 28);
         this.render.fillRectangle(this.colors.crimson, margin, rowY, 5, 28);
       }
-      // Remote actions are dimmed (and refused) without a phone connection.
-      const usable = this.isConnected || actions[index].id === "settings";
+      // Remote actions are dimmed (and refused) without a phone connection, and
+      // Bolus also without the phone's bolus key.
+      const usable = this.helperUsable(actions[index].id);
       this.text(actions[index].label, this.fonts.fullLabel, !usable ? this.colors.dim : selected ? white : ink, cx, rowY, true);
     }
     const chevronX = width - margin - 10;
@@ -1098,8 +1116,7 @@ class CrimsonBearWatchface {
   helperOutcome(width, top) {
     const cx = width >> 1;
     const cy = top + 66;
-    const [action, outcome = ""] = this.result.split(":");
-    const ok = outcome === "ok";
+    const [label, ok, words] = this.helperResultText();
     this.helperTitle(width, top, ok ? "Done" : "Not done", ok ? this.colors.ink : this.colors.low);
     if (ok) {
       this.render.drawLine(cx - 22, cy, cx - 6, cy + 16, this.colors.crimson, 7);
@@ -1108,9 +1125,8 @@ class CrimsonBearWatchface {
       this.render.drawLine(cx - 16, cy - 16, cx + 16, cy + 16, this.colors.low, 7);
       this.render.drawLine(cx - 16, cy + 16, cx + 16, cy - 16, this.colors.low, 7);
     }
-    const label = (ACTIONS.find((item) => item.id === action) || { label: action }).label;
     this.text(label, this.fonts.fullLabel, this.colors.ink, cx, top + 96, true);
-    this.text(ok ? "The phone carried it out" : outcome, this.fonts.bold, this.colors.ink, cx, top + 126, true);
+    this.text(words, this.fonts.bold, this.colors.ink, cx, top + 126, true);
     this.text("Select: OK", this.fonts.bold, this.colors.ink, cx, top + 182, true);
   }
 
@@ -1138,6 +1154,15 @@ class CrimsonBearWatchface {
     this.confirmation.lines.forEach((line, index) =>
       this.text(line, this.fonts.fullLabel, ink, cx, top + 38 + index * 28, true)
     );
+    // What a bolus or carbs rest on: the reading now and IOB, or a red
+    // warning (for any action) when there is no recent reading.
+    const contextY = bolus ? top + 66 : top + 98;
+    if (this.stale || this.state.glucose == null)
+      this.text("No recent CGM data", this.fonts.bold, this.colors.low, cx, contextY, true);
+    else if (bolus || this.confirmation.action === "carbs") {
+      const iob = this.state.iob == null ? "" : `, IOB ${Number(this.state.iob).toFixed(1)} U`;
+      this.text(`${this.glucoseText()} ${this.state.units}${iob}`, this.fonts.bold, ink, cx, contextY, true);
+    }
     if (bolus) this.text("The phone checks its limits", this.fonts.bold, ink, cx, top + 98, true);
     const margin = screen.round ? 34 : 14;
     this.render.fillRectangle(this.colors.crimson, margin, top + 128, width - 2 * margin, 44);
@@ -1165,6 +1190,12 @@ class CrimsonBearWatchface {
     });
     const hint = this.editing != null ? "Select: save  Back: undo" : "Select: change  Back: done";
     this.text(hint, this.fonts.bold, ink, cx, top + 32 + SETTINGS.length * 23, true);
+  }
+
+  // Whether an action can be opened now. The phone sends the bolus key only
+  // while it takes boluses from the watch.
+  helperUsable(id) {
+    return id === "settings" || (this.isConnected && (id !== "bolus" || Boolean(this.bolusAuth)));
   }
 
   // Bolus shows in the list only while Allow bolus is on.
@@ -1212,7 +1243,6 @@ class CrimsonBearWatchface {
       if (this.view === "confirm") this.helperDrawHold();
       return;
     }
-    Vibes.shortPulse();
     this.helperSend();
     this.draw();
   }
@@ -1323,9 +1353,17 @@ class CrimsonBearWatchface {
       this.editing = null;
       return;
     }
+    // Without the bolus key, say why on the answer screen.
+    if (id === "bolus" && this.isConnected && !this.bolusAuth) {
+      this.result = "bolus:no key";
+      this.resultUntil = Date.now() + 60000;
+      this.view = "result";
+      Vibes.doublePulse();
+      return;
+    }
     // No remote action without a phone connection (the status line says so),
     // and one request at a time: the next waits for this one's answer.
-    if (!this.isConnected || this.pending) {
+    if (!this.helperUsable(id) || this.pending) {
       Vibes.doublePulse();
       return;
     }
@@ -1370,6 +1408,9 @@ class CrimsonBearWatchface {
       else this.view = "main";
       return;
     }
+    // A short buzz for "sent" (only now: a refusal above has its own double
+    // buzz, and PebbleOS drops a buzz that starts while another plays).
+    Vibes.shortPulse();
     this.result = null;
     this.view = "sending";
     this.pending = { action, lines, until: Date.now() + RESULT_TIMEOUT_MS };
@@ -2019,9 +2060,9 @@ class CrimsonBearWatchface {
     const request = this.bolusCommand;
     this.bolusCommand = null;
     this.refreshPending = false;
-    // "mute:30@…" answers "mute:ok", "signedbolus:0.5@…#…" "bolus:ok".
+    // "mute:30@…" answers "mute:ok", "signedbolus:0.5@…#…" "signedbolus:ok".
     // Nothing is left pending, so the real send below returns at once.
-    if (request) setTimeout(() => demoReceive(this, [["RESULT", `${request.split(":")[0].replace("signed", "")}:ok`]]), 3000);
+    if (request) setTimeout(() => demoReceive(this, [["RESULT", `${request.split(":")[0]}:ok`]]), 3000);
     // @endif
     // @if helper
     if ((!this.refreshPending && !this.bolusCommand) || !this.message) return;
@@ -2105,10 +2146,15 @@ class CrimsonBearWatchface {
       this.countDiagnostic("staleTransitions");
       // The no-recent-data buzz ignores Loop's alarm mask, which is 0 while
       // Loop's alerts are muted or watch alarms are off.
+      // @if helper
+      // (Not in the remote: the watchface gives that alarm, and the status line
+      // says so.)
+      // @else
       {
         this.countDiagnostic("staleAlarms");
         Vibes.shortPulse();
       }
+      // @endif
     }
     return true;
   }
@@ -2282,7 +2328,11 @@ class CrimsonBearWatchface {
           this.lastDataSignature = signature;
           Object.assign(this.state, data, { error: null });
           if (readingAdvanced) this.lastRefreshRequestedAt = 0;
+          // @if helper
+          // (The remote keeps an answer on screen when a new reading arrives.)
+          // @else
           if (readingAdvanced) this.result = null;
+          // @endif
           this.refreshPending = false;
           needsFullDraw = this.updateStaleState() || needsFullDraw;
           receivedData = true;
@@ -2301,7 +2351,12 @@ class CrimsonBearWatchface {
         // out, a double buzz when it wasn't.
         this.result = value;
         this.resultUntil = Date.now() + 60000;
+        // @if helper
+        // A long buzz when done, so it can't be taken for the short "sent" one.
+        if (value.endsWith(":ok")) Vibes.longPulse();
+        // @else
         if (value.endsWith(":ok")) Vibes.shortPulse();
+        // @endif
         else Vibes.doublePulse();
         needsFullDraw = true;
         // @if helper
