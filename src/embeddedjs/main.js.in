@@ -162,11 +162,6 @@ function bolusMac(key, canonical) {
 
 const BATTERY_SAMPLE_INTERVAL_MS = 5 * 60 * 1000;
 const DIAGNOSTICS_INTERVAL_MS = 60 * 60 * 1000;
-// @if timedRefresh
-const WATCH_REFRESH_READING_AGE_MS = 5 * 60 * 1000;
-const WATCH_REFRESH_QUICK_RETRY_AGE_MS = 6 * 60 * 1000;
-const WATCH_REFRESH_STALE_RETRY_MS = 5 * 60 * 1000;
-// @endif
 // Grace period to let diagnostics ride an already-outgoing message before
 // forcing a dedicated radio wake-up for telemetry alone.
 const DIAGNOSTICS_PIGGYBACK_GRACE_MS = 15 * 60 * 1000;
@@ -274,14 +269,6 @@ class CrimsonBearWatchface {
     this.refreshPending = true;
     this.lastRefreshRequestedAt = 0;
     this.refreshStartedAt = 0;
-    // @if timedRefresh
-    // Learned wait (ms) past the 5-minute mark for the next reading to reach
-    // the source; probeHits counts first-probe hits, and probing marks an
-    // outstanding first probe.
-    this.probeDelay = 0;
-    this.probeHits = 0;
-    this.probing = false;
-    // @endif
     this.isConnected = false;
     this.phoneDisconnectedAt = 0;
     this.telemetryPending = false;
@@ -1107,22 +1094,6 @@ class CrimsonBearWatchface {
       now - this.telemetryDueAt >= DIAGNOSTICS_PIGGYBACK_GRACE_MS
     )
       this.flushOutbound();
-    // @if timedRefresh
-    const updated = Number(this.state.updated);
-    const readingAge =
-      Number.isFinite(updated) && updated > 0 ? Math.max(0, now - updated) : Infinity;
-    const delay = this.probeDelay || 0;
-    const quickAge = WATCH_REFRESH_QUICK_RETRY_AGE_MS + delay;
-    const refreshDue =
-      readingAge >= WATCH_REFRESH_READING_AGE_MS + delay &&
-      (!this.lastRefreshRequestedAt ||
-        (this.lastRefreshRequestedAt < updated + quickAge && readingAge >= quickAge) ||
-        now - this.lastRefreshRequestedAt >= WATCH_REFRESH_STALE_RETRY_MS);
-    // Cached connection state can miss recovery. Probe the message service
-    // when due, and retry rejected writes from this existing minute event.
-    if (this.refreshPending || refreshDue)
-      this.requestDataRefresh();
-    // @endif
     const staleChanged = this.updateStaleState(now);
     this.requestRender(staleChanged ? 3 : 2, 0, date);
   }
@@ -1374,9 +1345,6 @@ class CrimsonBearWatchface {
       if (bolus) this.bolusCommand = null;
       else
       if (this.refreshPending) {
-        // @if timedRefresh
-        this.probing = !this.lastRefreshRequestedAt && Number(this.state.updated) > 0;
-        // @endif
         this.refreshPending = false;
         this.lastRefreshRequestedAt = Date.now();
         this.refreshStartedAt = this.lastRefreshRequestedAt;
@@ -1583,20 +1551,6 @@ class CrimsonBearWatchface {
             this.state.error != null;
           this.lastDataSignature = signature;
           Object.assign(this.state, data, { error: null });
-          // @if timedRefresh
-          // A missed first probe waits a minute longer (max 3); six straight
-          // hits try a minute earlier again.
-          if (this.probing) {
-            this.probing = false;
-            if (!readingAdvanced) {
-              this.probeDelay = Math.min(180000, (this.probeDelay || 0) + 60000);
-              this.probeHits = 0;
-            } else if (this.probeDelay && ++this.probeHits >= 6) {
-              this.probeDelay -= 60000;
-              this.probeHits = 0;
-            }
-          }
-          // @endif
           if (readingAdvanced) this.lastRefreshRequestedAt = 0;
           if (readingAdvanced) this.result = null;
           this.refreshPending = false;
@@ -1607,9 +1561,6 @@ class CrimsonBearWatchface {
           this.state.error = "Bad response";
         }
       } else if (key === "ERROR") {
-        // @if timedRefresh
-        this.probing = false;
-        // @endif
         this.refreshPending = false;
         this.refreshStartedAt = 0;
         needsFullDraw = needsFullDraw || this.state.error !== value;
