@@ -1,0 +1,22 @@
+{
+  "allowShakeDebugActionTestOnly": false,
+  "helper": true,
+  "colors": {
+    "ink": [5, 26, 36],
+    "ringBorder": [28, 112, 64],
+    "accent": [76, 217, 100],
+    "graph": [79, 173, 248],
+    "panel": [170, 255, 170],
+    "pale": [234, 247, 237],
+    "low": [220, 45, 65],
+    "high": [235, 190, 35]
+  },
+  "text": {
+    "setupApp": "Open the Loop app",
+    "settings": "Luped CGM settings",
+    "setupAction": "send watch settings"
+  },
+  "compactGlucoseOffset": 35,
+  "fullArrowScale": 1.25,
+  "flatArrowScale": 0.9
+}

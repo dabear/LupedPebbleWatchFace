@@ -1,0 +1,53 @@
+{
+  "name": "luped-remote",
+  "author": "Luped CGM contributors",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Loop/Trio remote watchapp for Pebble Time 2 and newer watches: reading, IOB and COB, and confirmed remote requests",
+  "license": "MIT",
+  "keywords": [
+    "pebble-app",
+    "watchapp",
+    "cgm",
+    "loop"
+  ],
+  "pebble": {
+    "displayName": "Luped Remote",
+    "uuid": "738255f4-b58b-41cd-a7ae-27fc80e81fcb",
+    "projectType": "moddable",
+    "sdkVersion": "3",
+    "enableMultiJS": false,
+    "targetPlatforms": [
+      "emery",
+      "gabbro"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "capabilities": [],
+    "messageKeys": [
+      "COMMAND",
+      "DATA",
+      "ERROR",
+      "CONFIGURED",
+      "DIAGNOSTICS",
+      "RESULT"
+    ],
+    "resources": {
+      "media": [
+        {
+          "type": "bitmap",
+          "name": "IMAGE_MENU_ICON",
+          "file": "images/lupedhelper-menu-icon.png",
+          "menuIcon": true,
+          "targetPlatforms": [
+            "emery",
+            "gabbro"
+          ],
+          "memoryFormat": "SmallestPalette",
+          "spaceOptimization": "storage"
+        }
+      ]
+    }
+  }
+}

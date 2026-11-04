@@ -17,9 +17,10 @@ variant="luped"
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/build-release.sh [--variant luped] [--build] [--install] [--measure-memory] [--cloudpebble] [--publish] [--minify] [--no-minify] [--skip-deps] [--release-notes TEXT]
+Usage: ./scripts/build-release.sh [--variant luped|lupedhelper] [--build] [--install] [--measure-memory] [--cloudpebble] [--publish] [--minify] [--no-minify] [--skip-deps] [--release-notes TEXT]
 
-Each variant is a directory under variants/ (luped is the default). With no
+Each variant is a directory under variants/ (luped is the default; lupedhelper
+is the Luped Remote watchapp). With no
 arguments, the script interactively selects actions. Explicit action flags
 run without prompts. --install targets the connected phone (--cloudpebble installs
 through CloudPebble instead). --measure-memory (with --build --install)
@@ -44,7 +45,7 @@ else
     case "$1" in
       --variant)
         if [[ $# -lt 2 ]]; then
-          echo "--variant requires a variant name (luped)." >&2
+          echo "--variant requires a variant name (luped or lupedhelper)." >&2
           exit 2
         fi
         variant="$2"
@@ -209,6 +210,17 @@ case "$variant" in
     store_icon_dir="variants/luped/assets"
     store_icon_prefix="luped"
     store_description="A Loop-styled CGM watchface for Pebble Time 2 and Pebble Round 2. Requires a direct watch connection from a supported iPhone app such as Loop or Trio; the watchface has no Pebble app settings and does not fetch glucose data on its own."
+    extra_private_methods=""
+    ;;
+  lupedhelper)
+    artifact="build/luped-remote.pbw"
+    display_name="Luped Remote"
+    screenshot_prefix="emery_lupedhelper"
+    store_icon_dir="variants/lupedhelper/assets"
+    store_icon_prefix="lupedhelper"
+    store_description="A button-driven remote for Loop on Pebble Time 2 and Pebble Round 2: the latest glucose, IOB and COB, and requests to the phone (mute alerts, add carbs, end an override or temp target, and an optional signed bolus that is off by default), each confirmed on the watch and checked again by the phone. Requires a direct watch connection from a supported iPhone app; it is not medical advice and does not replace the phone app."
+    # The remote's own methods (main.js.in, "// @if helper"), mangled like Luped's.
+    extra_private_methods="|helper[A-Za-z]+"
     ;;
   *)
     echo "No release metadata for variant $variant; add it to scripts/build-release.sh." >&2
@@ -422,7 +434,7 @@ if [[ "$do_build" == true || "$do_publish" == true ]]; then
     # are eligible for property mangling. State, diagnostics, AppMessage, Pebble
     # and renderer properties are deliberately absent so the phone/mobile
     # protocol and host APIs stay stable.
-    private_watch_methods='/^(start|text|glucoseColor|glucoseText|deltaText|newDiagnostics|ensureDiagnosticsWindow|countDiagnostic|addDiagnostic|recordDraw|diagnosticsSnapshot|recordLatency|resetDiagnostics|drawGlucose|arrow|graphPoint|graph|drawVariantRing|setupScreen|readingTime|drawCgmStatus|footer|drawBluetoothDisconnectedIndicator|fullScreenFace|face|requestRender|draw|recoverRender|drawNow|drawMinute|drawMinuteNow|startBatteryService|updateBattery|startMessageService|requestDataRefresh|requestDiagnostics|checkConnection|setPhoneConnected|flushOutbound|updateStaleState|readMessages|loopFreshness|drawLoopRing)$/'
+    private_watch_methods='/^(start|text|glucoseColor|glucoseText|deltaText|newDiagnostics|ensureDiagnosticsWindow|countDiagnostic|addDiagnostic|recordDraw|diagnosticsSnapshot|recordLatency|resetDiagnostics|drawGlucose|arrow|graphPoint|graph|drawVariantRing|setupScreen|readingTime|drawCgmStatus|footer|drawBluetoothDisconnectedIndicator|fullScreenFace|face|requestRender|draw|recoverRender|drawNow|drawMinute|drawMinuteNow|startBatteryService|updateBattery|startMessageService|requestDataRefresh|requestDiagnostics|checkConnection|setPhoneConnected|flushOutbound|updateStaleState|readMessages|loopFreshness|drawLoopRing'"$extra_private_methods"')$/'
     for watch_module in main; do
       readable_module="$stage/src/embeddedjs/$watch_module.js"
       minified_module="$stage/src/embeddedjs/$watch_module.min.js"

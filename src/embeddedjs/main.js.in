@@ -5,6 +5,9 @@ import Battery from "embedded:sensor/Battery";
 // @if allowShakeDebugActionTestOnly
 import Accelerometer from "embedded:sensor/Accelerometer";
 // @endif
+// @if helper
+import Button from "pebble/button";
+// @endif
 
 // @if allowShakeDebugActionTestOnly
 // Test builds only (allowShakeDebugActionTestOnly in watchface-config.json,
@@ -13,6 +16,44 @@ import Accelerometer from "embedded:sensor/Accelerometer";
 // else (such as "mute:<minutes>") is sent with its confirmation time. Off, none
 // of this is built in.
 const SHAKE_DEBUG_ACTION = "mute:30";
+// @endif
+
+// @if helper
+// Luped Remote (the lupedhelper variant) is a watchapp, so it gets the buttons.
+// It closes itself back to the watchface after AUTO_CLOSE_SECONDS without a
+// button press, but never while a request waits for the phone's RESULT
+// (RESULT_TIMEOUT_MS at most).
+const AUTO_CLOSE_SECONDS = 60;
+const RESULT_TIMEOUT_MS = 30000;
+// What the user can ask the phone for (PROTOCOL.md, COMMAND). The phone sends
+// the watch no preset names, so overrides and temp targets can only be ended.
+const ACTIONS = [
+  { id: "mute", label: "Mute alerts" },
+  { id: "carbs", label: "Add carbs" },
+  { id: "override", label: "End override" },
+  { id: "temptarget", label: "End temp target" },
+  { id: "bolus", label: "Bolus" },
+  { id: "settings", label: "Settings" },
+];
+// The watch's own settings, kept in localStorage on the watch. Each value is one
+// of its options; bolus is off until the user turns it on here.
+const SETTINGS = [
+  { id: "mute", label: "Mute", unit: "min", options: [15, 30, 60, 90, 120, 180, 240], value: 30 },
+  { id: "carbStep", label: "Carb step", unit: "g", options: [1, 5, 10], value: 5 },
+  { id: "carbMax", label: "Carb max", unit: "g", options: [10, 20, 30, 50, 75, 100], value: 50 },
+  { id: "bolusStep", label: "Bolus step", unit: "U", options: [0.05, 0.1, 0.25, 0.5], value: 0.1 },
+  { id: "bolusMax", label: "Bolus max", unit: "U", options: [0.5, 1, 2, 3, 5], value: 1 },
+  { id: "allowBolus", label: "Allow bolus", options: [0, 1], value: 0 },
+];
+
+function setting(id) {
+  return SETTINGS.find((item) => item.id === id).value;
+}
+
+function settingText(item, value) {
+  return item.id === "allowBolus" ? (value ? "On" : "Off") : `${value} ${item.unit}`;
+}
+
 // @endif
 
 // Signed bolus requests (PROTOCOL.md, Signed boluses): HMAC-SHA256 in plain
@@ -166,7 +207,10 @@ const DIAGNOSTICS_INTERVAL_MS = 60 * 60 * 1000;
 // forcing a dedicated radio wake-up for telemetry alone.
 const DIAGNOSTICS_PIGGYBACK_GRACE_MS = 15 * 60 * 1000;
 
+// @if helper
+// @else
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+// @endif
 
 // Trend-arrow stroke tables are constant; keep them out of the per-draw path.
 const ARROW_GLYPHS = {
@@ -279,6 +323,20 @@ class CrimsonBearWatchface {
     this.startupId = Date.now();
     this.diagnostics = this.newDiagnostics();
     this.hasRenderedConfiguredFace = false;
+    // @if helper
+    this.view = "main";
+    this.menuIndex = 0;
+    this.secondsLeft = AUTO_CLOSE_SECONDS;
+    this.fonts.bold = new this.render.Font("Gothic-Bold", 18);
+    for (const item of SETTINGS) {
+      try {
+        const stored = localStorage.getItem(`setting.${item.id}`);
+        if (stored != null && item.options.includes(Number(stored))) item.value = Number(stored);
+      } catch (_) {
+        // Defaults when storage is unavailable.
+      }
+    }
+    // @endif
   }
 
   start() {
@@ -290,6 +348,22 @@ class CrimsonBearWatchface {
     watch.addEventListener("minutechange", (event) => this.drawMinute(event));
     // @if allowShakeDebugActionTestOnly
     this.shake = new Accelerometer({ onTap: () => this.requestShakeDebugAction() });
+    // @endif
+    // @if helper
+    // pebble/button (Moddable's Pebble module; watchfaces may not import it)
+    // subscribes the app window's click handlers. Up and Down repeat while held,
+    // for the amount pickers. Taking Back means the app exits itself on Back.
+    this.upDown = new Button({
+      types: ["up", "down"],
+      single: { repeat: 150 },
+      onPush: (pushed, button) => pushed && this.helperPress(button),
+    });
+    this.selectBack = new Button({
+      types: ["select", "back"],
+      single: true,
+      onPush: (pushed, button) => pushed && this.helperPress(button),
+    });
+    watch.addEventListener("secondchange", () => this.helperTick());
     // @endif
     // A system pop-up (notification, alarm, call) covering the watchface. A
     // buzz it covers within its 4.7 s gets the delay as its outcome.
@@ -547,6 +621,8 @@ class CrimsonBearWatchface {
     }
   }
 
+  // @if helper
+  // @else
   // Trend graph
 
   graphDomain() {
@@ -662,6 +738,7 @@ class CrimsonBearWatchface {
     );
   }
 
+  // @endif
   // Shown instead of any data: the phone speaks a newer protocol (update the
   // face), or another phone app took over the watch (restart the face).
   warningScreen(width, height) {
@@ -752,6 +829,350 @@ class CrimsonBearWatchface {
     ).padStart(2, "0")}`;
   }
 
+  // @if helper
+  // Luped Remote's screens, one at a time, in Luped's palette: a header with
+  // the clock and the auto-close countdown, then the main screen (reading, IOB
+  // and COB, one status line, the action list), an amount picker, a
+  // confirmation or the watch's settings. Until the phone has answered,
+  // Luped's connecting, setup and warning screens show instead.
+  face() {
+    const { width, height } = this.render;
+    const header = this.helperHeaderHeight();
+    const top = header + (screen.round ? 4 : 2);
+    if (this.hostChange || this.newProtocol) this.warningScreen(width, height);
+    else if (!this.configurationKnown) this.connectingScreen(width, height);
+    else if (!this.state.configured) this.setupScreen(width, height);
+    else {
+      this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
+      if (this.view === "amount") this.helperAmount(width, top);
+      else if (this.view === "confirm") this.helperConfirm(width, top);
+      else if (this.view === "settings") this.helperSettings(width, top);
+      else this.helperMain(width, top);
+    }
+    this.helperHeader(width, header);
+  }
+
+  helperHeaderHeight() {
+    return screen.round ? 30 : 22;
+  }
+
+  // The once-a-second repaint: the header only, not the whole screen.
+  helperDrawHeader() {
+    const { width } = this.render;
+    const header = this.helperHeaderHeight();
+    let began = false;
+    try {
+      this.render.begin(0, 0, width, header);
+      began = true;
+      this.helperHeader(width, header);
+      began = false;
+      this.render.end();
+    } catch (_) {
+      if (began) this.render.end();
+      this.draw();
+    }
+  }
+
+  // The clock and the seconds left before the app closes, over a thin bar that
+  // shrinks with them (amber and full while a request waits for the phone).
+  helperHeader(width, header) {
+    const { ink, white } = this.colors;
+    const now = new Date();
+    const clock = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const left = this.pending ? "wait" : `${this.secondsLeft}s`;
+    const y = header - 20;
+    const inset = screen.round ? 66 : 6;
+    this.render.fillRectangle(ink, 0, 0, width, header);
+    this.text(clock, this.fonts.bold, white, inset, y);
+    this.text(left, this.fonts.bold, white, width - inset - this.render.getTextWidth(left, this.fonts.bold), y);
+    const barWidth = this.pending ? width : Math.round((width * this.secondsLeft) / AUTO_CLOSE_SECONDS);
+    this.render.fillRectangle(this.pending ? this.colors.high : this.colors.crimson, 0, header - 3, barWidth, 3);
+  }
+
+  // The status line: a request waiting or its answer, else the connection.
+  // Returns the text and its band colour.
+  helperStatus() {
+    if (this.pending) return [`Sent ${this.pending.action}, waiting`, this.colors.high];
+    if (this.result) {
+      const [action, outcome = ""] = this.result.split(":");
+      return [`${action}: ${outcome}`, outcome === "ok" ? this.colors.panel : this.colors.low];
+    }
+    if (!this.isConnected) return ["No phone connection", this.colors.low];
+    if (this.state.error) return [this.state.error, this.colors.low];
+    if (this.stale) return ["No recent CGM data", this.colors.low];
+    return [`Connected to ${this.host || "phone"}`, this.colors.panel];
+  }
+
+  // A small triangle pointing up (dir -1) or down (dir 1), for list scrolling.
+  helperChevron(x, y, dir, color) {
+    for (let i = 0; i < 5; i++) this.render.fillRectangle(color, x - i, y - dir * i, 2 * i + 1, 1);
+  }
+
+  helperMain(width, top) {
+    const cx = width >> 1;
+    const margin = screen.round ? 24 : 6;
+    const { ink, white } = this.colors;
+    // Glucose in the host's units and Luped's alert colour, the trend arrow,
+    // the delta and the reading's time.
+    const glucoseWidth = this.render.getTextWidth(this.glucoseText(), this.fonts.fullGlucose);
+    const glucoseX = cx - 16;
+    this.drawGlucose(glucoseX, top - 4, this.fonts.fullGlucose);
+    if (!this.stale && this.state.glucose != null)
+      this.arrow(glucoseX + (glucoseWidth >> 1) + 26, top + 20, this.state.direction, this.colors.crimson, 0.8);
+    const y = top + 42;
+    this.text(`${this.deltaText()} ${this.state.units}`, this.fonts.bold, ink, margin, y + 4);
+    const time = this.readingTime();
+    this.text(time, this.fonts.delta, ink, width - margin - this.render.getTextWidth(time, this.fonts.delta), y);
+    // IOB and COB as Luped's status strip shows them (or the phone's own line),
+    // dimmed once the loop is stale.
+    const { iob, cob } = this.state;
+    const loop = [iob == null ? "" : `IOB ${Number(iob).toFixed(1)} U`, cob == null ? "" : `COB ${Math.round(cob)} g`]
+      .filter(Boolean)
+      .join("    ");
+    const line = loop || String(this.state.statusLine || "").replace("\t", "  ");
+    this.text(line, this.fonts.bold, this.loopFreshness() > 1 ? this.colors.dim : ink, cx, y + 26, true);
+    const [status, band] = this.helperStatus();
+    this.render.fillRectangle(band, 0, y + 50, width, 22);
+    this.text(status, this.fonts.bold, band === this.colors.low ? white : ink, cx, y + 51, true);
+    // Three rows of the action list; the highlighted one is an ink bar with an
+    // accent edge, and triangles show when there is more above or below.
+    const actions = this.helperActions();
+    const first = Math.max(0, Math.min(this.menuIndex - 1, actions.length - 3));
+    const listY = y + 76;
+    for (let row = 0; row < 3 && first + row < actions.length; row++) {
+      const index = first + row;
+      const rowY = listY + row * 28;
+      const selected = index === this.menuIndex;
+      if (selected) {
+        this.render.fillRectangle(ink, margin, rowY, width - 2 * margin, 28);
+        this.render.fillRectangle(this.colors.crimson, margin, rowY, 5, 28);
+      }
+      this.text(actions[index].label, this.fonts.fullLabel, selected ? white : ink, cx, rowY, true);
+    }
+    const chevronX = width - margin - 10;
+    if (first > 0) this.helperChevron(chevronX, listY + 9, -1, this.colors.graph);
+    if (first + 3 < actions.length) this.helperChevron(chevronX, listY + 74, 1, this.colors.graph);
+  }
+
+  // A large number, with the decimal point drawn as Luped draws glucose (the
+  // Bitham font has digits only).
+  helperNumber(value, cx, y) {
+    const font = this.fonts.fullGlucose;
+    const [whole, fraction] = String(value).split(".");
+    const wholeWidth = this.render.getTextWidth(whole, font);
+    const fractionWidth = fraction ? 9 + this.render.getTextWidth(fraction, font) : 0;
+    const left = Math.round(cx - (wholeWidth + fractionWidth) / 2);
+    this.text(whole, font, this.colors.ink, left, y);
+    if (!fraction) return;
+    this.render.drawCircle(this.colors.ink, left + wholeWidth + 4, y + 34, 3, 0, 360);
+    this.text(fraction, font, this.colors.ink, left + wholeWidth + 9, y);
+  }
+
+  // A title band under the header, in ink or (for a bolus) amber.
+  helperTitle(width, top, title, color = this.colors.ink) {
+    this.render.fillRectangle(color, 0, top - 2, width, 30);
+    this.text(title, this.fonts.fullLabel, color === this.colors.ink ? this.colors.white : this.colors.ink, width >> 1, top - 1, true);
+  }
+
+  helperAmount(width, top) {
+    const cx = width >> 1;
+    const { picker } = this;
+    const ink = this.colors.ink;
+    const margin = screen.round ? 34 : 14;
+    this.helperTitle(width, top, picker.label, picker.action === "bolus" ? this.colors.high : ink);
+    this.render.fillRectangle(this.colors.panel, margin, top + 34, width - 2 * margin, 76);
+    this.helperChevron(cx, top + 38, -1, ink);
+    this.helperNumber(this.helperValue(), cx, top + 44);
+    this.helperChevron(cx, top + 105, 1, ink);
+    this.text(picker.unit, this.fonts.bold, ink, width - margin - 6 - this.render.getTextWidth(picker.unit, this.fonts.bold), top + 84);
+    this.text(`Step ${picker.step}, max ${this.helperValue(picker.maxCount)} ${picker.unit}`, this.fonts.bold, ink, cx, top + 116, true);
+    this.text("Select: continue", this.fonts.bold, ink, cx, top + 146, true);
+    this.text("Back: cancel", this.fonts.bold, ink, cx, top + 166, true);
+  }
+
+  helperConfirm(width, top) {
+    const cx = width >> 1;
+    const ink = this.colors.ink;
+    const bolus = this.confirmation.action === "bolus";
+    this.helperTitle(width, top, "Confirm", bolus ? this.colors.high : ink);
+    this.confirmation.lines.forEach((line, index) =>
+      this.text(line, this.fonts.fullLabel, ink, cx, top + 38 + index * 28, true)
+    );
+    if (bolus) this.text("The phone checks its limits", this.fonts.bold, ink, cx, top + 98, true);
+    const margin = screen.round ? 34 : 14;
+    this.render.fillRectangle(this.colors.crimson, margin, top + 128, width - 2 * margin, 26);
+    this.text("Select: send", this.fonts.bold, ink, cx, top + 131, true);
+    this.text("Back: cancel", this.fonts.bold, ink, cx, top + 160, true);
+  }
+
+  helperSettings(width, top) {
+    const cx = width >> 1;
+    const margin = screen.round ? 28 : 4;
+    const { ink, white } = this.colors;
+    this.helperTitle(width, top, "Settings");
+    SETTINGS.forEach((item, index) => {
+      const y = top + 30 + index * 23;
+      const selected = index === this.settingIndex;
+      const editing = selected && this.editing != null;
+      const value = editing ? `< ${settingText(item, item.options[this.editing])} >` : settingText(item, item.value);
+      if (selected) {
+        this.render.fillRectangle(editing ? this.colors.panel : ink, margin, y, width - 2 * margin, 23);
+        this.render.fillRectangle(this.colors.crimson, margin, y, 5, 23);
+      }
+      this.text(`${item.label}: ${value}`, this.fonts.bold, selected && !editing ? white : ink, cx, y, true);
+    });
+    const hint = this.editing != null ? "Select: save  Back: undo" : "Select: change  Back: done";
+    this.text(hint, this.fonts.bold, ink, cx, top + 32 + SETTINGS.length * 23, true);
+  }
+
+  // Bolus shows in the list only while Allow bolus is on.
+  helperActions() {
+    return ACTIONS.filter((action) => action.id !== "bolus" || setting("allowBolus"));
+  }
+
+  // The picker's amount (or `count` steps of it), at most two decimals.
+  helperValue(count = this.picker.count) {
+    return Math.round(count * this.picker.step * 100) / 100;
+  }
+
+  helperPress(button) {
+    // Every press starts the minute before the app closes again.
+    this.secondsLeft = AUTO_CLOSE_SECONDS;
+    const move = button === "up" ? 1 : button === "down" ? -1 : 0;
+    const select = button === "select";
+    const back = button === "back";
+    const view = this.hostChange || this.newProtocol || !this.state.configured ? "main" : this.view;
+    if (view === "main") {
+      if (back) {
+        watch.exit();
+        return;
+      }
+      const actions = this.helperActions();
+      this.menuIndex = (this.menuIndex - move + actions.length) % actions.length;
+      if (select && this.state.configured && !this.hostChange && !this.newProtocol)
+        this.helperOpen(actions[this.menuIndex].id);
+    } else if (view === "amount") {
+      const { picker } = this;
+      picker.count = Math.max(1, Math.min(picker.maxCount, picker.count + move));
+      if (back) this.view = "main";
+      if (select) {
+        const value = this.helperValue();
+        const lines = {
+          mute: ["Mute alerts", `for ${value} min?`],
+          carbs: [`Add ${value} g`, "of carbs?"],
+          bolus: [`Bolus ${value} U?`],
+        }[picker.action];
+        const command = picker.action === "bolus" ? `signedbolus:${value}` : `${picker.action}:${value}`;
+        this.helperConfirmation(picker.action, command, lines);
+      }
+    } else if (view === "confirm") {
+      if (select) this.helperSend();
+      if (back) this.view = "main";
+    } else if (view === "settings") {
+      const item = SETTINGS[this.settingIndex];
+      if (this.editing == null) {
+        this.settingIndex = (this.settingIndex - move + SETTINGS.length) % SETTINGS.length;
+        if (select) this.editing = item.options.indexOf(item.value);
+        if (back) this.view = "main";
+      } else {
+        this.editing = Math.max(0, Math.min(item.options.length - 1, this.editing + move));
+        if (select) {
+          item.value = item.options[this.editing];
+          try {
+            localStorage.setItem(`setting.${item.id}`, String(item.value));
+          } catch (_) {
+            // Kept for this run only.
+          }
+        }
+        if (select || back) this.editing = null;
+        this.menuIndex = Math.min(this.menuIndex, this.helperActions().length - 1);
+      }
+    }
+    this.draw();
+  }
+
+  helperOpen(id) {
+    if (id === "settings") {
+      this.view = "settings";
+      this.settingIndex = 0;
+      this.editing = null;
+      return;
+    }
+    // One request at a time: the next waits for this one's answer.
+    if (this.pending) {
+      Vibes.doublePulse();
+      return;
+    }
+    if (id === "override" || id === "temptarget") {
+      const name = id === "override" ? "override?" : "temp target?";
+      this.helperConfirmation(id, `${id}:cancel`, ["End the running", name]);
+      return;
+    }
+    const step = id === "mute" ? 15 : setting(id === "carbs" ? "carbStep" : "bolusStep");
+    const max = id === "mute" ? 240 : setting(id === "carbs" ? "carbMax" : "bolusMax");
+    this.picker = {
+      action: id,
+      label: ACTIONS.find((action) => action.id === id).label,
+      unit: id === "mute" ? "min" : id === "carbs" ? "g" : "U",
+      step,
+      count: id === "mute" ? setting("mute") / 15 : 1,
+      maxCount: Math.max(1, Math.floor(max / step + 1e-9)),
+    };
+    this.view = "amount";
+  }
+
+  helperConfirmation(action, command, lines) {
+    this.confirmation = { action, command, lines };
+    this.view = "confirm";
+  }
+
+  // Sends the confirmed request (PROTOCOL.md, COMMAND); a bolus only signed,
+  // with the phone's session key, and only while Allow bolus is on.
+  helperSend() {
+    const { action, command } = this.confirmation;
+    this.view = "main";
+    this.confirmation = null;
+    if (action === "bolus" && (!setting("allowBolus") || !this.bolusAuth)) {
+      if (setting("allowBolus")) this.requestSignedBolus(command); // shows "bolus: no key"
+      return;
+    }
+    this.result = null;
+    this.pending = { action, until: Date.now() + RESULT_TIMEOUT_MS };
+    if (action === "bolus") this.requestSignedBolus(command);
+    else {
+      this.bolusCommand = `${command}@${Math.floor(Date.now() / 1000)}`;
+      this.flushOutbound();
+    }
+  }
+
+  // Once a second: the countdown (paused while a request waits for its answer),
+  // the answer's timeout, and closing back to the watchface.
+  helperTick() {
+    const now = Date.now();
+    let changed = false;
+    if (this.pending && now >= this.pending.until) {
+      changed = true;
+      // Unsent requests are dropped; a sent one may still have been carried out.
+      const sent = !this.bolusCommand;
+      this.bolusCommand = null;
+      this.result = `${this.pending.action}:${sent ? "no answer, check phone" : "not sent"}`;
+      this.resultUntil = now + 60000;
+      this.pending = null;
+      this.secondsLeft = Math.max(this.secondsLeft, 15);
+      Vibes.doublePulse();
+    }
+    if (!this.pending) this.secondsLeft -= 1;
+    if (this.secondsLeft <= 0) {
+      // APP_EXIT_ACTION_PERFORMED_SUCCESSFULLY: back to the watchface, not the launcher.
+      watch.exit(1);
+      return;
+    }
+    // Only the header changes, unless the answer timed out.
+    if (changed) this.draw();
+    else this.helperDrawHeader();
+  }
+
+  // @else
   drawCgmStatus(x, y, width, height, drawBackground = true) {
     // Geometry and background are fixed for a layout; only the timestamp is
     // dynamic. Keep this strip narrow and behind the ring in graph mode.
@@ -965,6 +1386,7 @@ class CrimsonBearWatchface {
     if (drawFooter) this.footer(width, height, footerHeight, now);
   }
 
+  // @endif
   // Full-render scheduling and recovery
 
   requestRender(priority, delay = 0, minuteDate = null) {
@@ -1022,6 +1444,10 @@ class CrimsonBearWatchface {
       this.lastRenderedFullScreen === this.state.fullScreen;
     // The warning screen covers the footer too.
     if (this.hostChange || this.newProtocol) contentOnly = false;
+    // @if helper
+    // The remote shows one whole screen at a time and repaints all of it.
+    contentOnly = false;
+    // @endif
     const invalidatedPixels =
       this.render.width * (contentOnly ? this.render.height - 30 : this.render.height);
     let began = false;
@@ -1098,6 +1524,13 @@ class CrimsonBearWatchface {
     this.requestRender(staleChanged ? 3 : 2, 0, date);
   }
 
+  // @if helper
+  // No footer: the remote repaints its screen (it does every second anyway).
+  drawMinuteNow() {
+    this.drawNow();
+  }
+
+  // @else
   drawMinuteNow(minuteDate = null) {
     if (!this.state.configured) return;
     if (this.hostChange || this.newProtocol) return;
@@ -1202,6 +1635,7 @@ class CrimsonBearWatchface {
     }
   }
 
+  // @endif
   // Watch hardware services
 
   startBatteryService() {
@@ -1574,6 +2008,11 @@ class CrimsonBearWatchface {
         if (value.endsWith(":ok")) Vibes.shortPulse();
         else Vibes.doublePulse();
         needsFullDraw = true;
+        // @if helper
+        // The answer ends the wait; leave time to read it before closing.
+        this.pending = null;
+        this.secondsLeft = Math.max(this.secondsLeft, 15);
+        // @endif
       } else if (key === "CONFIGURED") {
         const configured = Boolean(value);
         needsFullDraw =

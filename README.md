@@ -91,6 +91,43 @@ shake sends a fixed watch request (`SHAKE_DEBUG_ACTION` in `main.js.in`:
 `mute:30`, or a signed bolus such as `signedforcedbolus:0.1:1`). `--publish`
 refuses to run while it is on.
 
+## Luped Remote (`lupedhelper`)
+
+Luped Remote is a watchapp (not a watchface) built from the same template and
+phone protocol as Luped, so it can use the buttons:
+
+```sh
+PEBBLE_BIN="$(command -v pebble)" ./scripts/build-release.sh --variant lupedhelper --build --minify
+```
+
+The package is written to `build/luped-remote.pbw`. The phone app must publish
+a watch connection for the remote's own UUID
+(`738255f4-b58b-41cd-a7ae-27fc80e81fcb`) before it connects; until then it shows
+its connecting screen.
+
+- **Main screen:** glucose in the phone's units (the phone chooses them), trend
+  arrow, delta and reading time, IOB and COB, one status line (connection,
+  or a request's answer from `RESULT`) and the action list.
+- **Buttons:** Up/Down move through the actions, Select opens one, Back closes
+  the app. In an amount picker Up/Down change the amount by the step from the
+  settings and Select continues. Every request then needs a confirmation
+  screen (Select sends, Back cancels) before anything is sent.
+- **Actions:** Mute alerts (`mute:<minutes>`), Add carbs (`carbs:<grams>`), End
+  override (`override:cancel`), End temp target (`temptarget:cancel`), and Bolus,
+  only as Luped's signed bolus (`signedbolus:<units>`), shown only after
+  **Allow bolus** is turned on in Settings (off by default). The phone sends the
+  watch no preset names and they can't be typed on a watch, so the remote can
+  end a running override or temp target but not start one.
+- **Settings** (on the watch, kept in its storage): default mute minutes, carb
+  step and maximum, bolus step and maximum, Allow bolus. The phone still applies
+  all of its own checks and limits.
+- **Auto-close:** the app returns to the watchface after a minute without a
+  button press; the header shows the seconds left. It stays open while a request
+  waits for the phone's answer (up to 30 seconds).
+
+Luped Remote shows what the phone sends; it is not medical advice and does not
+replace the phone app. Check treatments on the phone and with your care team.
+
 ## Protocol and attribution
 
 - The mobile integration contract is documented in
