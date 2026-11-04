@@ -111,7 +111,8 @@ its connecting screen.
 - **Buttons:** Up/Down move through the actions, Select opens one, Back closes
   the app. In an amount picker Up/Down change the amount by the step from the
   settings and Select continues. Every request then needs a confirmation
-  screen (Select sends, Back cancels) before anything is sent.
+  screen before anything is sent: hold Up, Select and Down down together
+  (within half a second) to send; Back cancels. Select alone doesn't send.
 - **Actions:** Mute alerts (`mute:<minutes>`), Add carbs (`carbs:<grams>`), End
   override (`override:cancel`), End temp target (`temptarget:cancel`), and Bolus,
   only as Luped's signed bolus (`signedbolus:<units>`), shown only after
