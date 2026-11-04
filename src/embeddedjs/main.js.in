@@ -1294,6 +1294,14 @@ class CrimsonBearWatchface {
     const back = button === "back";
     const view = this.hostChange || this.newProtocol || !this.state.configured ? "main" : this.view;
     if (view === "main") {
+      // While a request waits (30 s at most), Back shows it again instead of
+      // closing the app, so its answer isn't missed.
+      if (back && this.pending) {
+        this.view = "sending";
+        if (!this.wheelTimer) this.wheelTimer = setInterval(() => this.helperSpin(), 100);
+        this.draw();
+        return;
+      }
       if (back) {
         watch.exit();
         return;
