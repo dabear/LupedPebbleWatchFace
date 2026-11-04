@@ -218,7 +218,7 @@ case "$variant" in
     screenshot_prefix="emery_lupedhelper"
     store_icon_dir="variants/lupedhelper/assets"
     store_icon_prefix="lupedhelper"
-    store_description="A button-driven remote for Loop on Pebble Time 2 and Pebble Round 2: the latest glucose, IOB and COB, and requests to the phone (mute alerts, add carbs, end an override or temp target, and an optional signed bolus that is off by default), each confirmed on the watch and checked again by the phone. Requires a direct watch connection from a supported iPhone app; it is not medical advice and does not replace the phone app."
+    store_description="A button-driven remote for Loop on Pebble Time 2 and Pebble Round 2: the latest glucose, IOB and COB, and requests to the phone (mute alerts, add carbs, end an override or temp target, and an optional signed bolus that is off by default), each confirmed on the watch and checked again by the phone. Requires a direct watch connection from a supported iPhone app; it is not medical advice and does not replace the phone app. Tip: on the watch, Settings > Quick Launch > Tap Up > Luped Remote opens it with one press of Up from the watchface."
     # The remote's own methods (main.js.in, "// @if helper"), mangled like Luped's.
     extra_private_methods="|helper[A-Za-z]+"
     ;;

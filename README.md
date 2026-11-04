@@ -105,6 +105,11 @@ a watch connection for the remote's own UUID
 (`738255f4-b58b-41cd-a7ae-27fc80e81fcb`) before it connects; until then it shows
 its connecting screen.
 
+- **Open it with one press of Up:** on the watch, go to **Settings → Quick
+  Launch → Tap Up** and choose **Luped Remote**. A single press of Up on the
+  watchface then opens it (Tap Up opens Health by default; Hold Up, Tap Down
+  and Hold Down work the same way). Apps and phone apps can't set this, so it is
+  a one-time step on the watch.
 - **Main screen:** glucose in the phone's units (the phone chooses them), trend
   arrow, delta and reading time, IOB and COB, one status line (connection,
   or a request's answer from `RESULT`) and the action list.
@@ -114,6 +119,10 @@ its connecting screen.
   screen before anything is sent: press the top and bottom right buttons (Up and
   Down) together (within half a second) and hold both for 2 seconds while a bar
   fills; letting go early sends nothing. Back cancels. Select alone doesn't send.
+- **Sending:** after the hold, a Sending screen with a turning wheel shows until
+  the phone answers, then Done or Not done (with the reason) and a buzz: short
+  when done, double when not. Back hides the wheel. Without a phone connection
+  the actions are dimmed and can't be opened.
 - **Actions:** Mute alerts (`mute:<minutes>`), Add carbs (`carbs:<grams>`), End
   override (`override:cancel`), End temp target (`temptarget:cancel`), and Bolus,
   only as Luped's signed bolus (`signedbolus:<units>`), shown only after
@@ -126,6 +135,11 @@ its connecting screen.
 - **Auto-close:** the app returns to the watchface after a minute without a
   button press; the header shows the seconds left. It stays open while a request
   waits for the phone's answer (up to 30 seconds).
+
+To try the remote without a phone, set `"demoTestOnly": true` in
+`variants/lupedhelper/watchface-config.json` and build: the test build shows
+sample data and answers each request itself after 3 seconds. Turn it off again
+afterwards; publishing refuses it.
 
 Luped Remote shows what the phone sends; it is not medical advice and does not
 replace the phone app. Check treatments on the phone and with your care team.
