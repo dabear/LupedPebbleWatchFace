@@ -1459,10 +1459,26 @@ class CrimsonBearWatchface {
   }
 
   // @else
+  // A request's answer, "<action>:<outcome>" (PROTOCOL.md, RESULT), as its
+  // label, its outcome ("done" for ok) and whether it was done. It may answer
+  // Luped Remote after that app has closed; Loop answers a bolus as signedbolus.
+  resultText() {
+    const [action, outcome = ""] = this.result.split(":");
+    const name = action.replace("signed", "").replace("forced", "");
+    const label =
+      { mute: "Mute", carbs: "Carbs", override: "Override", temptarget: "Temp target", bolus: "Bolus" }[name] ||
+      action;
+    return [label, outcome === "ok" ? "done" : outcome, outcome === "ok"];
+  }
+
   drawCgmStatus(x, y, width, height, drawBackground = true) {
     // Geometry and background are fixed for a layout; only the timestamp is
     // dynamic. Keep this strip narrow and behind the ring in graph mode.
-    const value = this.readingTime();
+    // For a minute after a request's answer, its action goes left and its
+    // outcome takes the CGM time's place (red when not done): together they
+    // don't fit before the ring.
+    const answer = this.result && this.resultText();
+    const value = answer ? answer[1] : this.readingTime();
     const right = x + width - 5;
     const textWidth = this.render.getTextWidth(value, this.fonts.status);
     if (drawBackground)
@@ -1481,14 +1497,15 @@ class CrimsonBearWatchface {
     // The glucose ring's bottom covers the middle of the strip, so a line too long
     // for the space before it (ISF & target) comes as "left\tright": the second
     // part goes between the ring and the CGM time.
-    this.render.fillRectangle(this.colors.ink, x, y, right - textWidth - 4 - x, height);
+    // Up to the cleared CGM time, so a wider outcome before it leaves nothing.
+    this.render.fillRectangle(this.colors.ink, x, y, right - textWidth - 2 - x, height);
     const { iob, cob } = this.state;
     const [left, rest = ""] = (
-      this.result ||
+      (answer && `${answer[0]}:`) ||
       this.state.statusLine ||
       (iob == null ? "" : `${Number(iob).toFixed(1)} U`) + (cob == null ? "" : `  ${Math.round(cob)} g`)
     ).split("\t");
-    const color = !this.result && this.loopFreshness() > 1 ? this.colors.dim : this.colors.white;
+    const color = !answer && this.loopFreshness() > 1 ? this.colors.dim : this.colors.white;
     const restX = Math.round(width * 0.48) + 34;
     this.text(left, this.fonts.status, color, x + 5, y + 1);
     this.text(rest, this.fonts.status, color, restX, y + 1);
@@ -1499,7 +1516,7 @@ class CrimsonBearWatchface {
     this.text(
       value,
       this.fonts.status,
-      this.colors.white,
+      answer && !answer[2] ? this.colors.low : this.colors.white,
       right - textWidth,
       y + 1
     );
@@ -1588,10 +1605,13 @@ class CrimsonBearWatchface {
       cy + 14,
       true
     );
+    // Large Glucose has no status strip, so a request's answer takes the
+    // reading time's place for its minute (red when not done).
+    const answer = this.result && this.resultText();
     this.text(
-      this.readingTime(),
+      answer ? `${answer[0]}: ${answer[1]}` : this.readingTime(),
       this.fonts.status,
-      this.stale ? this.colors.low : this.colors.ink,
+      this.stale || (answer && !answer[2]) ? this.colors.low : this.colors.ink,
       cx,
       cy + 39,
       true
@@ -2354,17 +2374,13 @@ class CrimsonBearWatchface {
         needsFullDraw = needsFullDraw || this.state.error !== value;
         this.state.error = value;
       } else if (key === "RESULT") {
-        // The phone's "<action>:<outcome>" for a watch request, shown in the
-        // status strip for a minute or until the next reading: a short buzz when it was carried
-        // out, a double buzz when it wasn't.
+        // The phone's "<action>:<outcome>" for a watch request (on the watchface
+        // too when Luped Remote closed before the answer), shown for a minute or
+        // until the next reading: a long buzz when it was carried out (unlike
+        // the remote's short "sent" buzz), a double buzz when it wasn't.
         this.result = value;
         this.resultUntil = Date.now() + 60000;
-        // @if helper
-        // A long buzz when done, so it can't be taken for the short "sent" one.
         if (value.endsWith(":ok")) Vibes.longPulse();
-        // @else
-        if (value.endsWith(":ok")) Vibes.shortPulse();
-        // @endif
         else Vibes.doublePulse();
         needsFullDraw = true;
         // @if helper

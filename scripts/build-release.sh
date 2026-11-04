@@ -439,7 +439,7 @@ if [[ "$do_build" == true || "$do_publish" == true ]]; then
     # are eligible for property mangling. State, diagnostics, AppMessage, Pebble
     # and renderer properties are deliberately absent so the phone/mobile
     # protocol and host APIs stay stable.
-    private_watch_methods='/^(start|text|glucoseColor|glucoseText|deltaText|newDiagnostics|ensureDiagnosticsWindow|countDiagnostic|addDiagnostic|recordDraw|diagnosticsSnapshot|recordLatency|resetDiagnostics|drawGlucose|arrow|graphPoint|graph|drawVariantRing|setupScreen|readingTime|drawCgmStatus|footer|drawBluetoothDisconnectedIndicator|fullScreenFace|face|requestRender|draw|recoverRender|drawNow|drawMinute|drawMinuteNow|startBatteryService|updateBattery|startMessageService|requestDataRefresh|requestDiagnostics|checkConnection|setPhoneConnected|flushOutbound|updateStaleState|readMessages|loopFreshness|drawLoopRing'"$extra_private_methods"')$/'
+    private_watch_methods='/^(start|text|glucoseColor|glucoseText|deltaText|newDiagnostics|ensureDiagnosticsWindow|countDiagnostic|addDiagnostic|recordDraw|diagnosticsSnapshot|recordLatency|resetDiagnostics|drawGlucose|arrow|graphPoint|graph|drawVariantRing|setupScreen|readingTime|drawCgmStatus|footer|drawBluetoothDisconnectedIndicator|fullScreenFace|face|requestRender|draw|recoverRender|drawNow|drawMinute|drawMinuteNow|startBatteryService|updateBattery|startMessageService|requestDataRefresh|requestDiagnostics|checkConnection|setPhoneConnected|flushOutbound|updateStaleState|readMessages|loopFreshness|drawLoopRing|resultText'"$extra_private_methods"')$/'
     for watch_module in main; do
       readable_module="$stage/src/embeddedjs/$watch_module.js"
       minified_module="$stage/src/embeddedjs/$watch_module.min.js"

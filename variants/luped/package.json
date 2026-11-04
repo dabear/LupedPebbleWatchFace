@@ -1,7 +1,7 @@
 {
   "name": "luped-cgm",
   "author": "Luped CGM contributors",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "private": true,
   "description": "A Loop-styled CGM watchface for Pebble Time 2 and newer watches",
   "license": "MIT",

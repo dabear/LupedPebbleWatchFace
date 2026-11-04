@@ -114,15 +114,23 @@ request without a valid amount is answered `failed`. The host answers each
 request on `RESULT`, kept short as `<action>:<outcome>` (for example `mute:ok`,
 `signedbolus:refused`, `carbs:ok`); outcomes are `ok`, `refused`, `ignored` (the
 plugin doesn't offer it) and `failed`, and the reason is in the host's log.
-Luped shows the `RESULT` text in the status strip under the ring for a minute or
-until the next reading, with a short buzz for `ok` and a double buzz otherwise.
+Luped shows the answer as `Bolus: done`, `Carbs: refused` and so on (a
+`signedbolus` or `signedforcedbolus` answer as Bolus) for a minute or until the
+next reading: in the status strip under the ring, or in Large Glucose in place
+of the reading time, red when not done. It buzzes long for `ok` and twice
+otherwise. Luped Remote (a watchapp, UUID
+`738255f4-b58b-41cd-a7ae-27fc80e81fcb`) sends the same requests and shows the
+answer itself. The watch opens a phone session only for the app that is
+running, so the host sends each `RESULT` to the session that is open: if the
+remote has closed before its answer, the watchface gets and shows it.
 
 ### Signed boluses
 
 Boluses are only ever signed; there is no unsigned bolus request (`bolus:` and
-`forcedbolus:` are not commands). Luped doesn't send signed boluses yet
-(a watchface gets no button presses; it needs a watchapp with a confirmation
-screen), and the plugin offers remote bolus only once that exists.
+`forcedbolus:` are not commands). The watchface gets no button presses, so
+Luped Remote sends them (`signedbolus:<units>`, after its confirmation screen
+and only while its Allow bolus setting is on); the watchface only shows their
+answers.
 
 - **Session key, phone to watch:** `COMMAND auth:v1:<sid>:<key>`. `sid` is 16
   lowercase hex digits, `key` 64 (256 random bits). The phone sends a new one
