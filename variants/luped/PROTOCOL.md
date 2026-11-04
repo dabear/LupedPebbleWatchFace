@@ -113,16 +113,26 @@ and acts only if its plugin declares the capability and its user allowed it; a
 request without a valid amount is answered `failed`. The host answers each
 request on `RESULT`, kept short as `<action>:<outcome>` (for example `mute:ok`,
 `signedbolus:refused`, `carbs:ok`); outcomes are `ok`, `refused`, `ignored` (the
-plugin doesn't offer it) and `failed`, and the reason is in the host's log.
+plugin doesn't offer it) and `failed`. An answer that isn't `ok` may add the
+reason as a third field, `<action>:<outcome>:<reason>` (for example
+`carbs:refused:too soon`): `not allowed`, `too soon`, `over max`,
+`over recommended`, `daily limit`, `too old`, `no recent glucose`,
+`no such preset`, `in progress`, `invalid amount`, `old key` or `not verified`
+(LupedKit's `LupedResultReason`; short, lowercase, never a `:`). A watch reads
+the first two fields and may ignore the rest, so older watches keep working;
+an `ok` answer never has a reason, as watches buzz "done" for answers ending in
+`:ok`. The full reason is in the host's log.
 Luped shows the answer as `Bolus: done`, `Carbs: refused` and so on (a
 `signedbolus` or `signedforcedbolus` answer as Bolus) for a minute or until the
 next reading: in the status strip under the ring, or in Large Glucose in place
 of the reading time, red when not done. It buzzes long for `ok` and twice
 otherwise. Luped Remote (a watchapp, UUID
 `738255f4-b58b-41cd-a7ae-27fc80e81fcb`) sends the same requests and shows the
-answer itself. The watch opens a phone session only for the app that is
-running, so the host sends each `RESULT` to the session that is open: if the
-remote has closed before its answer, the watchface gets and shows it.
+answer itself, with the reason under it (0.1.1 and later). The watch keeps a
+phone session open for each app the phone publishes a service for, but only the
+running app accepts pushes, so the host sends each `RESULT` to the app that is
+running: if the remote has closed before its answer, the watchface gets and
+shows it.
 
 ### Signed boluses
 

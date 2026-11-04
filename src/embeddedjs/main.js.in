@@ -976,11 +976,11 @@ class CrimsonBearWatchface {
     return [`Connected to ${this.host || "phone"}`, this.colors.panel];
   }
 
-  // The answer in "<action>:<outcome>" (PROTOCOL.md, RESULT) as the action's
-  // label, whether it was done, and the outcome in words. Loop answers a bolus
-  // as signedbolus.
+  // The answer in "<action>:<outcome>[:<reason>]" (PROTOCOL.md, RESULT) as the
+  // action's label, whether it was done, the outcome in words and the phone's
+  // reason (capitalized, or ""). Loop answers a bolus as signedbolus.
   helperResultText() {
-    const [action, outcome = ""] = this.result.split(":");
+    const [action, outcome = "", reason = ""] = this.result.split(":");
     const id = action.replace("signed", "").replace("forced", "");
     const label = (ACTIONS.find((item) => item.id === id) || { label: action }).label;
     const words = {
@@ -990,7 +990,7 @@ class CrimsonBearWatchface {
       failed: "It failed on the phone",
       "no key": "Phone doesn't allow it",
     }[outcome];
-    return [label, outcome === "ok", words || outcome];
+    return [label, outcome === "ok", words || outcome, reason.charAt(0).toUpperCase() + reason.slice(1)];
   }
 
   // A small triangle pointing up (dir -1) or down (dir 1), for list scrolling.
@@ -1120,7 +1120,7 @@ class CrimsonBearWatchface {
   helperOutcome(width, top) {
     const cx = width >> 1;
     const cy = top + 66;
-    const [label, ok, words] = this.helperResultText();
+    const [label, ok, words, reason] = this.helperResultText();
     this.helperTitle(width, top, ok ? "Done" : "Not done", ok ? this.colors.ink : this.colors.low);
     if (ok) {
       this.render.drawLine(cx - 22, cy, cx - 6, cy + 16, this.colors.crimson, 7);
@@ -1131,6 +1131,7 @@ class CrimsonBearWatchface {
     }
     this.text(label, this.fonts.fullLabel, this.colors.ink, cx, top + 96, true);
     this.text(words, this.fonts.bold, this.colors.ink, cx, top + 126, true);
+    if (reason) this.text(reason, this.fonts.bold, this.colors.low, cx, top + 150, true);
     this.text("Select: OK", this.fonts.bold, this.colors.ink, cx, top + 182, true);
   }
 
