@@ -27,6 +27,8 @@ const AUTO_CLOSE_SECONDS = 60;
 const RESULT_TIMEOUT_MS = 30000;
 // The confirmation chord: Up, Select and Down all down within this many ms.
 const CHORD_MS = 500;
+// ...and then held together this long to send.
+const HOLD_MS = 2000;
 // What the user can ask the phone for (PROTOCOL.md, COMMAND). The phone sends
 // the watch no preset names, so overrides and temp targets can only be ended.
 const ACTIONS = [
@@ -1011,9 +1013,10 @@ class CrimsonBearWatchface {
     if (bolus) this.text("The phone checks its limits", this.fonts.bold, ink, cx, top + 98, true);
     const margin = screen.round ? 34 : 14;
     this.render.fillRectangle(this.colors.crimson, margin, top + 128, width - 2 * margin, 44);
-    this.text("Press all 3 right buttons", this.fonts.bold, ink, cx, top + 131, true);
-    this.text("at once to send", this.fonts.bold, ink, cx, top + 149, true);
-    this.text("Back: cancel", this.fonts.bold, ink, cx, top + 178, true);
+    this.text("Hold all 3 right buttons", this.fonts.bold, ink, cx, top + 131, true);
+    this.text("for 2 s to send", this.fonts.bold, ink, cx, top + 149, true);
+    this.helperHoldBarFill();
+    this.text("Back: cancel", this.fonts.bold, ink, cx, top + 182, true);
   }
 
   helperSettings(width, top) {
@@ -1053,6 +1056,8 @@ class CrimsonBearWatchface {
     if (!pushed) {
       delete this.held[button];
       if (this.chordAt && !Object.keys(this.held).length) this.chordDoneAt = now;
+      // Letting go of any of the three before the hold completes sends nothing.
+      if (this.holdTimer) this.helperHoldEnd(false);
       return;
     }
     this.held[button] = now;
@@ -1061,8 +1066,59 @@ class CrimsonBearWatchface {
     this.chordAt = now;
     this.chordDoneAt = 0;
     this.secondsLeft = AUTO_CLOSE_SECONDS;
+    this.holdStart = now;
+    if (!this.holdTimer) this.holdTimer = setInterval(() => this.helperHoldStep(), 100);
+  }
+
+  // While the three are held: fill the bar, and send once HOLD_MS is reached.
+  helperHoldStep() {
+    if (Date.now() - this.holdStart >= HOLD_MS) this.helperHoldEnd(true);
+    else this.helperDrawHold();
+  }
+
+  helperHoldEnd(send) {
+    clearInterval(this.holdTimer);
+    this.holdTimer = null;
+    this.holdStart = 0;
+    if (!send || this.view !== "confirm") {
+      if (this.view === "confirm") this.helperDrawHold();
+      return;
+    }
+    Vibes.shortPulse();
     this.helperSend();
     this.draw();
+  }
+
+  // The hold bar's place on the confirm screen.
+  helperHoldBar() {
+    const margin = screen.round ? 34 : 14;
+    const top = this.helperHeaderHeight() + (screen.round ? 4 : 2);
+    return [margin, top + 175, this.render.width - 2 * margin, 6];
+  }
+
+  // Paints the hold bar: filled by how long the three have been held.
+  helperHoldBarFill() {
+    const [x, y, width, height] = this.helperHoldBar();
+    const held = this.holdStart ? Math.min(1, (Date.now() - this.holdStart) / HOLD_MS) : 0;
+    this.render.fillRectangle(this.colors.pale, 0, y, this.render.width, height);
+    this.render.fillRectangle(this.colors.panel, x, y, width, height);
+    this.render.fillRectangle(this.colors.ink, x, y, Math.round(width * held), height);
+  }
+
+  // Repaints only the hold bar (not the whole screen).
+  helperDrawHold() {
+    const [, y, , height] = this.helperHoldBar();
+    let began = false;
+    try {
+      // A full-width strip: Poco may widen a narrower region.
+      this.render.begin(0, y, this.render.width, height);
+      began = true;
+      this.helperHoldBarFill();
+      began = false;
+      this.render.end();
+    } catch (_) {
+      if (began) this.render.end();
+    }
   }
 
   helperPress(button) {
