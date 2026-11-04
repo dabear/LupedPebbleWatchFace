@@ -43,7 +43,8 @@ function demoReceive(face, entries) {
 // (RESULT_TIMEOUT_MS at most).
 const AUTO_CLOSE_SECONDS = 60;
 const RESULT_TIMEOUT_MS = 30000;
-// The confirmation chord: Up, Select and Down all down within this many ms.
+// The confirmation chord: Up and Down (the top and bottom right buttons) both
+// down within this many ms.
 const CHORD_MS = 500;
 // ...and then held together this long to send.
 const HOLD_MS = 2000;
@@ -393,11 +394,11 @@ class CrimsonBearWatchface {
       single: true,
       onPush: (pushed, button) => pushed && this.helperPress(button),
     });
-    // Raw presses and releases of the right-hand buttons, for the confirmation
-    // chord (all three held at once).
+    // Raw presses and releases of Up and Down, for the confirmation chord (both
+    // held at once).
     this.held = {};
     this.chord = new Button({
-      types: ["up", "select", "down"],
+      types: ["up", "down"],
       raw: true,
       onPush: (pushed, button) => this.helperRaw(pushed, button),
     });
@@ -1140,8 +1141,8 @@ class CrimsonBearWatchface {
     if (bolus) this.text("The phone checks its limits", this.fonts.bold, ink, cx, top + 98, true);
     const margin = screen.round ? 34 : 14;
     this.render.fillRectangle(this.colors.crimson, margin, top + 128, width - 2 * margin, 44);
-    this.text("Hold all 3 right buttons", this.fonts.bold, ink, cx, top + 131, true);
-    this.text("for 2 s to send", this.fonts.bold, ink, cx, top + 149, true);
+    this.text("Hold top and bottom right", this.fonts.bold, ink, cx, top + 131, true);
+    this.text("buttons for 2 s to send", this.fonts.bold, ink, cx, top + 149, true);
     this.helperHoldBarFill();
     this.text("Back: cancel", this.fonts.bold, ink, cx, top + 182, true);
   }
@@ -1176,19 +1177,19 @@ class CrimsonBearWatchface {
     return Math.round(count * this.picker.step * 100) / 100;
   }
 
-  // A request is sent only when Up, Select and Down are all held down within
-  // CHORD_MS of each other, on the confirmation screen.
+  // A request is sent only when Up and Down are both held down within CHORD_MS
+  // of each other, on the confirmation screen.
   helperRaw(pushed, button) {
     const now = Date.now();
     if (!pushed) {
       delete this.held[button];
       if (this.chordAt && !Object.keys(this.held).length) this.chordDoneAt = now;
-      // Letting go of any of the three before the hold completes sends nothing.
+      // Letting go of either before the hold completes sends nothing.
       if (this.holdTimer) this.helperHoldEnd(false);
       return;
     }
     this.held[button] = now;
-    const times = ["up", "select", "down"].map((name) => this.held[name]);
+    const times = ["up", "down"].map((name) => this.held[name]);
     if (this.view !== "confirm" || times.some((time) => time == null || now - time > CHORD_MS)) return;
     this.chordAt = now;
     this.chordDoneAt = 0;
@@ -1197,7 +1198,7 @@ class CrimsonBearWatchface {
     if (!this.holdTimer) this.holdTimer = setInterval(() => this.helperHoldStep(), 100);
   }
 
-  // While the three are held: fill the bar, and send once HOLD_MS is reached.
+  // While both are held: fill the bar, and send once HOLD_MS is reached.
   helperHoldStep() {
     if (Date.now() - this.holdStart >= HOLD_MS) this.helperHoldEnd(true);
     else this.helperDrawHold();
@@ -1223,7 +1224,7 @@ class CrimsonBearWatchface {
     return [margin, top + 175, this.render.width - 2 * margin, 6];
   }
 
-  // Paints the hold bar: filled by how long the three have been held.
+  // Paints the hold bar: filled by how long both have been held.
   helperHoldBarFill() {
     const [x, y, width, height] = this.helperHoldBar();
     const held = this.holdStart ? Math.min(1, (Date.now() - this.holdStart) / HOLD_MS) : 0;
@@ -1250,7 +1251,7 @@ class CrimsonBearWatchface {
 
   helperPress(button) {
     // A chord's own clicks arrive as its buttons are released: ignore clicks
-    // until 300 ms after all three are up (or 3 s, should a release get lost).
+    // until 300 ms after both are up (or 3 s, should a release get lost).
     if (this.chordAt) {
       const now = Date.now();
       if (now - this.chordAt < 3000 && (!this.chordDoneAt || now - this.chordDoneAt < 300)) return;
@@ -1286,7 +1287,7 @@ class CrimsonBearWatchface {
         this.helperConfirmation(picker.action, command, lines);
       }
     } else if (view === "confirm") {
-      // Select alone doesn't send: only the three-button chord (helperRaw).
+      // Select alone doesn't send: only the Up+Down chord (helperRaw).
       if (back) this.view = "main";
     } else if (view === "sending" || view === "result") {
       // Back hides the wheel (the status line still shows the wait); Select
