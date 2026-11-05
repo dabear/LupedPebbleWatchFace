@@ -132,8 +132,12 @@ its connecting screen.
   the actions are dimmed and can't be opened.
 - **Actions:** Mute alerts (`mute:<minutes>`), Add carbs (`carbs:<grams>`), End
   override (`override:cancel`), End temp target (`temptarget:cancel`), and Bolus,
-  only as Luped's signed bolus (`signedbolus:<units>`), shown only after
-  **Allow bolus** is turned on in Settings (off by default). The phone sends the
+  only as Luped's signed bolus (`signedbolus:<units>`, or
+  `signedbolus:<units>:<grams>` with carbs, which the phone adds first and gives
+  no bolus without), shown only after **Allow bolus** is turned on in Settings
+  (off by default). After the units, a second picker asks for carbs (0 g, the
+  start, for none); the confirm screen shows both, and the remote keeps waiting
+  after the carbs answer until the bolus answer arrives. The phone sends the
   watch no preset names and they can't be typed on a watch, so the remote can
   end a running override or temp target but not start one.
 - **Settings** (on the watch, kept in its storage): default mute minutes, carb

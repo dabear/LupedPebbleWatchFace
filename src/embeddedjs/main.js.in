@@ -1076,7 +1076,9 @@ class CrimsonBearWatchface {
       this.text(line.replace("?", ""), this.fonts.fullLabel, ink, cx, top + 34 + index * 26, true)
     );
     this.helperWheelFill();
-    this.text("Waiting for the phone", this.fonts.bold, ink, cx, top + 150, true);
+    const carbs = this.pending.carbs;
+    const waiting = carbs == null ? "Waiting for the phone" : carbs === "ok" ? "Carbs added, bolus next" : "Carbs not added";
+    this.text(waiting, this.fonts.bold, carbs != null && carbs !== "ok" ? this.colors.low : ink, cx, top + 150, true);
     this.text("Back: hide", this.fonts.bold, ink, cx, top + 182, true);
   }
 
@@ -1140,13 +1142,15 @@ class CrimsonBearWatchface {
     const { picker } = this;
     const ink = this.colors.ink;
     const margin = screen.round ? 34 : 14;
-    this.helperTitle(width, top, picker.label, picker.action === "bolus" ? this.colors.high : ink);
+    const bolus = picker.action === "bolus" || picker.action === "bolusCarbs";
+    this.helperTitle(width, top, picker.label, bolus ? this.colors.high : ink);
     this.render.fillRectangle(this.colors.panel, margin, top + 34, width - 2 * margin, 76);
     this.helperChevron(cx, top + 38, -1, ink);
     this.helperNumber(this.helperValue(), cx, top + 44);
     this.helperChevron(cx, top + 105, 1, ink);
     this.text(picker.unit, this.fonts.bold, ink, width - margin - 6 - this.render.getTextWidth(picker.unit, this.fonts.bold), top + 84);
-    this.text(`Step ${picker.step}, max ${this.helperValue(picker.maxCount)} ${picker.unit}`, this.fonts.bold, ink, cx, top + 116, true);
+    const range = picker.minCount === 0 ? `0: none, max` : `Step ${picker.step}, max`;
+    this.text(`${range} ${this.helperValue(picker.maxCount)} ${picker.unit}`, this.fonts.bold, ink, cx, top + 116, true);
     this.text("Select: continue", this.fonts.bold, ink, cx, top + 146, true);
     this.text("Back: cancel", this.fonts.bold, ink, cx, top + 166, true);
   }
@@ -1161,14 +1165,15 @@ class CrimsonBearWatchface {
     );
     // What a bolus or carbs rest on: the reading now and IOB, or a red
     // warning (for any action) when there is no recent reading.
-    const contextY = bolus ? top + 66 : top + 98;
+    const twoLineBolus = bolus && this.confirmation.lines.length > 1;
+    const contextY = bolus ? (twoLineBolus ? top + 94 : top + 66) : top + 98;
     if (this.stale || this.state.glucose == null)
       this.text("No recent CGM data", this.fonts.bold, this.colors.low, cx, contextY, true);
     else if (bolus || this.confirmation.action === "carbs") {
       const iob = this.state.iob == null ? "" : `, IOB ${Number(this.state.iob).toFixed(1)} U`;
       this.text(`${this.glucoseText()} ${this.state.units}${iob}`, this.fonts.bold, ink, cx, contextY, true);
     }
-    if (bolus) this.text("The phone checks its limits", this.fonts.bold, ink, cx, top + 98, true);
+    if (bolus && !twoLineBolus) this.text("The phone checks its limits", this.fonts.bold, ink, cx, top + 98, true);
     const margin = screen.round ? 34 : 14;
     this.render.fillRectangle(this.colors.crimson, margin, top + 128, width - 2 * margin, 44);
     this.text("Hold top and bottom right", this.fonts.bold, ink, cx, top + 131, true);
@@ -1317,17 +1322,36 @@ class CrimsonBearWatchface {
         this.helperOpen(actions[this.menuIndex].id);
     } else if (view === "amount") {
       const { picker } = this;
-      picker.count = Math.max(1, Math.min(picker.maxCount, picker.count + move));
+      const min = picker.minCount == null ? 1 : picker.minCount;
+      picker.count = Math.max(min, Math.min(picker.maxCount, picker.count + move));
       if (back) this.view = "main";
       if (select) {
         const value = this.helperValue();
-        const lines = {
-          mute: ["Mute alerts", `for ${value} min?`],
-          carbs: [`Add ${value} g`, "of carbs?"],
-          bolus: [`Bolus ${value} U?`],
-        }[picker.action];
-        const command = picker.action === "bolus" ? `signedbolus:${value}` : `${picker.action}:${value}`;
-        this.helperConfirmation(picker.action, command, lines);
+        if (picker.action === "bolus") {
+          // A bolus may come with carbs, which the phone adds first (and
+          // gives no bolus if it can't): 0 g, the start, for none.
+          const step = setting("carbStep");
+          this.picker = {
+            action: "bolusCarbs",
+            units: value,
+            label: "Carbs with bolus",
+            unit: "g",
+            step,
+            count: 0,
+            minCount: 0,
+            maxCount: Math.max(1, Math.floor(setting("carbMax") / step + 1e-9)),
+          };
+        } else if (picker.action === "bolusCarbs") {
+          const units = picker.units;
+          const lines = value ? [`Bolus ${units} U`, `with ${value} g carbs?`] : [`Bolus ${units} U?`];
+          this.helperConfirmation("bolus", value ? `signedbolus:${units}:${value}` : `signedbolus:${units}`, lines);
+        } else {
+          const lines = {
+            mute: ["Mute alerts", `for ${value} min?`],
+            carbs: [`Add ${value} g`, "of carbs?"],
+          }[picker.action];
+          this.helperConfirmation(picker.action, `${picker.action}:${value}`, lines);
+        }
       }
     } else if (view === "confirm") {
       // Select alone doesn't send: only the Up+Down chord (helperRaw).
@@ -2093,9 +2117,14 @@ class CrimsonBearWatchface {
     const request = this.bolusCommand;
     this.bolusCommand = null;
     this.refreshPending = false;
-    // "mute:30@…" answers "mute:ok", "signedbolus:0.5@…#…" "signedbolus:ok".
-    // Nothing is left pending, so the real send below returns at once.
-    if (request) setTimeout(() => demoReceive(this, [["RESULT", `${request.split(":")[0]}:ok`]]), 3000);
+    // "mute:30@…" answers "mute:ok", "signedbolus:0.5@…#…" "signedbolus:ok";
+    // like the phone, a bolus with carbs ("signedbolus:0.5:10@…") is answered
+    // "carbs:ok" first. Nothing is left pending, so the real send below returns at once.
+    if (request) {
+      const [action, , grams] = request.split("@")[0].split(":");
+      const answers = grams ? ["carbs:ok", `${action}:ok`] : [`${action}:ok`];
+      answers.forEach((answer, index) => setTimeout(() => demoReceive(this, [["RESULT", answer]]), 3000 * (index + 1)));
+    }
     // @endif
     // @if helper
     if ((!this.refreshPending && !this.bolusCommand) || !this.message) return;
@@ -2379,6 +2408,17 @@ class CrimsonBearWatchface {
         needsFullDraw = needsFullDraw || this.state.error !== value;
         this.state.error = value;
       } else if (key === "RESULT") {
+        // @if helper
+        // A bolus with carbs is answered twice, carbs first: that answer doesn't
+        // end the wait (so nothing reads as done before the bolus is), and the
+        // wait starts again for the bolus, which comes after a new bolus context.
+        if (this.pending && this.pending.action === "bolus" && value.startsWith("carbs:")) {
+          this.pending.carbs = value.split(":")[1];
+          this.pending.until = Date.now() + RESULT_TIMEOUT_MS;
+          needsFullDraw = true;
+          continue;
+        }
+        // @endif
         // The phone's "<action>:<outcome>" for a watch request (on the watchface
         // too when Luped Remote closed before the answer), shown for a minute or
         // until the next reading: a long buzz when it was carried out (unlike
