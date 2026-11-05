@@ -135,9 +135,16 @@ its connecting screen.
   only as Luped's signed bolus (`signedbolus:<units>`, or
   `signedbolus:<units>:<grams>` with carbs, which the phone adds first and gives
   no bolus without), shown only after **Allow bolus** is turned on in Settings
-  (off by default). After the units, a second picker asks for carbs (0 g, the
-  start, for none); the confirm screen shows both, and the remote keeps waiting
-  after the carbs answer until the bolus answer arrives. The phone sends the
+  (off by default). A bolus starts with its carbs (0 g, the start, for none);
+  the remote then asks the phone what it recommends with them
+  (`recommend:<grams>`, answered on `RECOMMEND`) and opens the bolus picker at
+  that amount, showing it, up to the lower of the watch's and the phone's
+  maximum bolus. The confirm screen shows the bolus, the carbs and the
+  recommendation (in red when the bolus is over it, which the phone refuses).
+  If the phone refuses (watch boluses off, no recent glucose) the remote says
+  why at once; if it doesn't answer within 6 s (a phone without
+  recommendations), the picker opens without one. After sending, the remote
+  keeps waiting after the carbs answer until the bolus answer arrives. The phone sends the
   watch no preset names and they can't be typed on a watch, so the remote can
   end a running override or temp target but not start one.
 - **Settings** (on the watch, kept in its storage): default mute minutes, carb

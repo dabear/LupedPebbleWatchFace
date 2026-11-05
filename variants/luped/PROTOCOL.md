@@ -134,6 +134,25 @@ running app accepts pushes, so the host sends each `RESULT` to the app that is
 running: if the remote has closed before its answer, the watchface gets and
 shows it.
 
+### Bolus recommendations
+
+Before the user picks a bolus, Luped Remote (0.1.3 and later) asks what the host
+would recommend with the carbs about to go with it: `COMMAND recommend:<grams>`
+(0 for none, with `@<confirmedAt>` like any request). It is a question only:
+nothing is added or delivered, and it needs no key. The host answers on the
+`RECOMMEND` message key (10006, after `RESULT`; only Luped Remote declares it),
+never on `RESULT`, and only to Luped Remote: if the remote has closed, the answer
+is dropped. The answer is `<grams>:ok:<units>:<maximum bolus>` (for example
+`10:ok:0.45:5`; the maximum is empty when unknown), or
+`<grams>:<outcome>[:<reason>]` with the outcomes and reasons of `RESULT` (for
+example `10:refused:not allowed`, `0:ignored` from a host without them). Loop
+answers only while its user allows boluses from the watch and its glucose is
+recent, with the carbs as the entry they would become (medium absorption,
+dated now); the bolus itself is still checked when it comes, against the
+recommendation after the carbs are added. Numbers have at most three decimals.
+A host that doesn't know the request (LupedKit before 1.1.1) logs and ignores
+it, so the remote stops waiting after a few seconds and goes on without one.
+
 ### Signed boluses
 
 Boluses are only ever signed; there is no unsigned bolus request (`bolus:` and
