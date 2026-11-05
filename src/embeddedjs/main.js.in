@@ -46,6 +46,9 @@ const RESULT_TIMEOUT_MS = 30000;
 // How long to wait for the phone's bolus recommendation (RECOMMEND) before
 // going on without one: a phone that doesn't know the question never answers.
 const RECOMMEND_TIMEOUT_MS = 6000;
+// How fast carbs are absorbed, chosen after their grams; the phone maps each to
+// its own absorption time. Medium is the default.
+const ABSORPTIONS = ["fast", "medium", "slow"];
 // The confirmation chord: Up and Down (the top and bottom right buttons) both
 // down within this many ms.
 const CHORD_MS = 500;
@@ -359,6 +362,8 @@ class CrimsonBearWatchface {
     this.menuIndex = 0;
     // A recommendation request waiting for RECOMMEND: { grams, until }.
     this.asking = null;
+    // The absorption chooser after carbs: { index, grams, then: "carbs" | "bolus" }.
+    this.absorptionPick = null;
     this.secondsLeft = AUTO_CLOSE_SECONDS;
     this.fonts.bold = new this.render.Font("Gothic-Bold", 18);
     for (const item of SETTINGS) {
@@ -923,6 +928,7 @@ class CrimsonBearWatchface {
       else if (this.view === "settings") this.helperSettings(width, top);
       else if (this.view === "sending" && this.pending) this.helperSending(width, top);
       else if (this.view === "asking" && this.asking) this.helperAsking(width, top);
+      else if (this.view === "absorption" && this.absorptionPick) this.helperAbsorption(width, top);
       else if (this.view === "result" && this.result) this.helperOutcome(width, top);
       else this.helperMain(width, top);
     }
@@ -1088,13 +1094,33 @@ class CrimsonBearWatchface {
     this.text("Back: hide", this.fonts.bold, ink, cx, top + 182, true);
   }
 
+  // Fast, medium or slow for the carbs just picked.
+  helperAbsorption(width, top) {
+    const cx = width >> 1;
+    const margin = screen.round ? 28 : 4;
+    const { ink, white } = this.colors;
+    const { index, grams, then } = this.absorptionPick;
+    this.helperTitle(width, top, `${grams} g: absorption`, then === "bolus" ? this.colors.high : ink);
+    ABSORPTIONS.forEach((name, row) => {
+      const y = top + 38 + row * 30;
+      if (row === index) {
+        this.render.fillRectangle(ink, margin, y, width - 2 * margin, 28);
+        this.render.fillRectangle(this.colors.crimson, margin, y, 5, 28);
+      }
+      this.text(name.charAt(0).toUpperCase() + name.slice(1), this.fonts.fullLabel, row === index ? white : ink, cx, y, true);
+    });
+    this.text("Select: continue", this.fonts.bold, ink, cx, top + 146, true);
+    this.text("Back: cancel", this.fonts.bold, ink, cx, top + 166, true);
+  }
+
   // While the phone works out its bolus recommendation for the chosen carbs.
   helperAsking(width, top) {
     const cx = width >> 1;
     const { ink } = this.colors;
     this.helperTitle(width, top, "Bolus", this.colors.high);
     const { grams } = this.asking;
-    this.text(grams ? `With ${grams} g carbs` : "Without carbs", this.fonts.fullLabel, ink, cx, top + 34, true);
+    const absorption = this.asking.absorption ? ` ${this.asking.absorption}` : "";
+    this.text(grams ? `With ${grams} g${absorption} carbs` : "Without carbs", this.fonts.fullLabel, ink, cx, top + 34, true);
     this.helperWheelFill();
     this.text("Asking the phone", this.fonts.bold, ink, cx, top + 150, true);
     this.text("Back: cancel", this.fonts.bold, ink, cx, top + 182, true);
@@ -1187,13 +1213,15 @@ class CrimsonBearWatchface {
     const ink = this.colors.ink;
     const bolus = this.confirmation.action === "bolus";
     this.helperTitle(width, top, "Confirm", bolus ? this.colors.high : ink);
+    // A bolus with carbs has four lines above the hold box: set them closer.
+    const twoLineBolus = bolus && this.confirmation.lines.length > 1;
+    const [firstY, lineGap] = twoLineBolus ? [34, 25] : [38, 28];
     this.confirmation.lines.forEach((line, index) =>
-      this.text(line, this.fonts.fullLabel, ink, cx, top + 38 + index * 28, true)
+      this.text(line, this.fonts.fullLabel, ink, cx, top + firstY + index * lineGap, true)
     );
     // What a bolus or carbs rest on: the reading now and IOB, or a red
     // warning (for any action) when there is no recent reading.
-    const twoLineBolus = bolus && this.confirmation.lines.length > 1;
-    const contextY = bolus ? (twoLineBolus ? top + 94 : top + 66) : top + 98;
+    const contextY = bolus ? (twoLineBolus ? top + 86 : top + 66) : top + 98;
     if (this.stale || this.state.glucose == null)
       this.text("No recent CGM data", this.fonts.bold, this.colors.low, cx, contextY, true);
     else if (bolus || this.confirmation.action === "carbs") {
@@ -1206,7 +1234,7 @@ class CrimsonBearWatchface {
       const over = recommended != null && units > recommended + 1e-9;
       const note = recommended == null ? "The phone checks its limits" : `${over ? "Over r" : "R"}ecommended ${recommended} U`;
       if (!twoLineBolus || recommended != null)
-        this.text(note, this.fonts.bold, over ? this.colors.low : ink, cx, twoLineBolus ? top + 110 : top + 98, true);
+        this.text(note, this.fonts.bold, over ? this.colors.low : ink, cx, twoLineBolus ? top + 105 : top + 98, true);
     }
     const margin = screen.round ? 34 : 14;
     this.render.fillRectangle(this.colors.crimson, margin, top + 128, width - 2 * margin, 44);
@@ -1249,7 +1277,7 @@ class CrimsonBearWatchface {
 
   // The picker's amount (or `count` steps of it), at most two decimals.
   helperValue(count = this.picker.count) {
-    return Math.round(count * this.picker.step * 100) / 100;
+    return Math.round(((this.picker.offset || 0) + count * this.picker.step) * 100) / 100;
   }
 
   // A request is sent only when Up and Down are both held down within CHORD_MS
@@ -1361,24 +1389,39 @@ class CrimsonBearWatchface {
       if (back) this.view = "main";
       if (select) {
         const value = this.helperValue();
-        if (picker.action === "bolusCarbs") {
-          // The carbs first, then the phone's recommendation for them.
-          this.helperAskRecommendation(value);
+        if (picker.action === "bolusCarbs" || (picker.action === "carbs" && value)) {
+          // Carbs get their absorption next (none to choose for 0 g), then a
+          // bolus the phone's recommendation for them.
+          if (value) this.absorptionPick = { index: 1, grams: value, then: picker.action === "carbs" ? "carbs" : "bolus" };
+          if (value) this.view = "absorption";
+          else this.helperAskRecommendation(0, null);
         } else if (picker.action === "bolus") {
           // A bolus may come with carbs, which the phone adds first (and
           // gives no bolus if it can't).
-          const { grams } = picker;
-          const lines = grams ? [`Bolus ${value} U`, `with ${grams} g carbs?`] : [`Bolus ${value} U?`];
-          this.helperConfirmation("bolus", grams ? `signedbolus:${value}:${grams}` : `signedbolus:${value}`, lines);
+          const { grams, absorption } = picker;
+          const lines = !grams
+            ? [`Bolus ${value} U?`]
+            : absorption
+              ? [`Bolus ${value} U with`, `${grams} g ${absorption} carbs?`]
+              : [`Bolus ${value} U`, `with ${grams} g carbs?`];
+          const carbs = grams ? `:${grams}${absorption ? `:${absorption}` : ""}` : "";
+          this.helperConfirmation("bolus", `signedbolus:${value}${carbs}`, lines);
           this.confirmation.units = value;
           this.confirmation.recommended = picker.recommended;
         } else {
-          const lines = {
-            mute: ["Mute alerts", `for ${value} min?`],
-            carbs: [`Add ${value} g`, "of carbs?"],
-          }[picker.action];
-          this.helperConfirmation(picker.action, `${picker.action}:${value}`, lines);
+          // Mute (carbs always go on to their absorption).
+          this.helperConfirmation("mute", `mute:${value}`, ["Mute alerts", `for ${value} min?`]);
         }
+      }
+    } else if (view === "absorption") {
+      const pick = this.absorptionPick;
+      pick.index = Math.max(0, Math.min(ABSORPTIONS.length - 1, pick.index - move));
+      if (back) this.view = "main";
+      if (select) {
+        const absorption = ABSORPTIONS[pick.index];
+        if (pick.then === "carbs")
+          this.helperConfirmation("carbs", `carbs:${pick.grams}:${absorption}`, [`Add ${pick.grams} g`, `${absorption} carbs?`]);
+        else this.helperAskRecommendation(pick.grams, absorption);
       }
     } else if (view === "asking") {
       // Back gives up on the recommendation; its late answer is ignored.
@@ -1479,10 +1522,10 @@ class CrimsonBearWatchface {
   // Asks the phone what it recommends with these carbs (PROTOCOL.md, Bolus
   // recommendations); RECOMMEND answers, or the wait ends after
   // RECOMMEND_TIMEOUT_MS. Nothing is added or delivered.
-  helperAskRecommendation(grams) {
-    this.asking = { grams, until: Date.now() + RECOMMEND_TIMEOUT_MS };
+  helperAskRecommendation(grams, absorption) {
+    this.asking = { grams, absorption, until: Date.now() + RECOMMEND_TIMEOUT_MS };
     this.view = "asking";
-    this.bolusCommand = `recommend:${grams}@${Math.floor(Date.now() / 1000)}`;
+    this.bolusCommand = `recommend:${grams}${absorption ? `:${absorption}` : ""}@${Math.floor(Date.now() / 1000)}`;
     this.flushOutbound();
     if (!this.wheelTimer) this.wheelTimer = setInterval(() => this.helperSpin(), 100);
   }
@@ -1495,10 +1538,10 @@ class CrimsonBearWatchface {
     if (!asking || Number(grams) !== asking.grams) return;
     this.asking = null;
     if (outcome === "ok") {
-      this.helperBolusPicker(asking.grams, Number(third), max === "" ? null : Number(max));
+      this.helperBolusPicker(asking, Number(third), max === "" ? null : Number(max));
     } else if (outcome === "ignored") {
       // A phone that doesn't offer recommendations still checks the bolus.
-      this.helperBolusPicker(asking.grams, null, null, "No recommendation");
+      this.helperBolusPicker(asking, null, null, "No recommendation");
     } else {
       // Refused (boluses off, no recent glucose) or failed: a bolus would be
       // refused too, so say why now instead.
@@ -1512,12 +1555,18 @@ class CrimsonBearWatchface {
   // The bolus picker for `grams` of carbs, starting at the recommendation
   // (rounded down to the step) and stopping at the watch's and the phone's
   // maximum bolus, whichever is lower.
-  helperBolusPicker(grams, recommended, phoneMax, note) {
+  helperBolusPicker({ grams, absorption }, recommended, phoneMax, note) {
     const step = setting("bolusStep");
     const max = phoneMax == null ? setting("bolusMax") : Math.min(setting("bolusMax"), phoneMax);
-    const maxCount = Math.max(1, Math.floor(max / step + 1e-9));
-    const count = recommended == null ? 1 : Math.max(1, Math.min(maxCount, Math.floor(recommended / step + 1e-9)));
-    this.picker = { action: "bolus", label: "Bolus", unit: "U", step, count, maxCount, grams, recommended, note };
+    // Steps are counted from the recommendation, so it is exactly the starting
+    // amount (0.45 U steps to 0.35 and 0.55); without one, from 0.
+    const fits = recommended != null && recommended > 0 && recommended <= max + 1e-9;
+    const offset = fits ? Math.round((recommended - Math.floor(recommended / step + 1e-9) * step) * 100) / 100 : 0;
+    const minCount = offset > 0 ? 0 : 1;
+    const maxCount = Math.max(minCount, Math.floor((max - offset) / step + 1e-9));
+    // Over the maximum (or none): start at the maximum, or at one step.
+    const count = fits ? Math.round((recommended - offset) / step) : recommended > max ? maxCount : 1;
+    this.picker = { action: "bolus", label: "Bolus", unit: "U", step, offset, count, minCount, maxCount, grams, absorption, recommended, note };
     this.view = "amount";
   }
 
@@ -1573,10 +1622,10 @@ class CrimsonBearWatchface {
     if (this.asking && now >= this.asking.until) {
       changed = true;
       // No answer (a phone that doesn't know the question): pick without one.
-      const { grams } = this.asking;
+      const { asking } = this;
       this.asking = null;
       this.bolusCommand = null;
-      this.helperBolusPicker(grams, null, null, "No answer from the phone");
+      this.helperBolusPicker(asking, null, null, "No answer from the phone");
     }
     if (!this.pending) this.secondsLeft -= 1;
     if (this.secondsLeft <= 0) {
@@ -2191,6 +2240,16 @@ class CrimsonBearWatchface {
       this.requestRender(2);
       return;
     }
+    // @if helper
+    // The carbs' absorption, when there is one, is signed after the grams.
+    const [action, units, grams, absorption] = request.split(":");
+    const confirmedAt = Math.floor(Date.now() / 1000);
+    auth.seq += 1;
+    const mac = bolusMac(
+      auth.key,
+      `v1|${auth.sid}|${auth.seq}|${confirmedAt}|${action}|${units}|${grams || ""}${absorption ? `|${absorption}` : ""}`
+    );
+    // @else
     const [action, units, grams] = request.split(":");
     const confirmedAt = Math.floor(Date.now() / 1000);
     auth.seq += 1;
@@ -2198,6 +2257,7 @@ class CrimsonBearWatchface {
       auth.key,
       `v1|${auth.sid}|${auth.seq}|${confirmedAt}|${action}|${units}|${grams || ""}`
     );
+    // @endif
     this.bolusCommand = `${request}@${confirmedAt}#${auth.sid}.${auth.seq}.${mac}`;
     this.flushOutbound();
   }

@@ -9,7 +9,9 @@
 // changing these. Buttons need no C: the pebble/button module subscribes them on
 // this window for the JavaScript (it is blocked in watchfaces only).
 #define LUPED_XS_STACK (4 * 1024) // Luped's peak use 2.2 KB
-#define LUPED_XS_SLOT (32 * 1024)
+// 28 KB, not Luped's 32: the remote's live slots are about 20 KB (0.1.4 in the
+// emery emulator), and with 32 KB its free app heap fell to 9.6 KB.
+#define LUPED_XS_SLOT (28 * 1024)
 #define LUPED_XS_CHUNK (16 * 1024)
 
 // Memory counters only in a measuring build (scripts/build-release.sh

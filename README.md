@@ -135,10 +135,14 @@ its connecting screen.
   only as Luped's signed bolus (`signedbolus:<units>`, or
   `signedbolus:<units>:<grams>` with carbs, which the phone adds first and gives
   no bolus without), shown only after **Allow bolus** is turned on in Settings
-  (off by default). A bolus starts with its carbs (0 g, the start, for none);
+  (off by default). Carbs, on their own or with a bolus, get an absorption
+  after their grams (Fast, Medium or Slow, Medium first; sent as
+  `carbs:<grams>:<absorption>` and in the bolus and recommendation requests).
+  A bolus starts with its carbs (0 g, the start, for none);
   the remote then asks the phone what it recommends with them
-  (`recommend:<grams>`, answered on `RECOMMEND`) and opens the bolus picker at
-  that amount, showing it, up to the lower of the watch's and the phone's
+  (`recommend:<grams>[:<absorption>]`, answered on `RECOMMEND`) and opens the
+  bolus picker at exactly that amount (stepping by the bolus step from it),
+  showing it, up to the lower of the watch's and the phone's
   maximum bolus. The confirm screen shows the bolus, the carbs and the
   recommendation (in red when the bolus is over it, which the phone refuses).
   If the phone refuses (watch boluses off, no recent glucose) the remote says
