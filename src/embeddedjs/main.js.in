@@ -333,6 +333,12 @@ class CrimsonBearWatchface {
     this.findUntil = 0;
     this.findTimer = null;
     this.findSteps = 0;
+    // The glucose alarm sound (PROTOCOL.md): only watches with a speaker
+    // report one, and the phone asks for the sound per alarm (a negative
+    // DATA index 9).
+    this.hasSpeaker = false;
+    this.quietTime = false;
+    this.speakerReportPending = false;
     this.lastDataSignature = null;
     this.footerState = {
       clock: null,
@@ -392,6 +398,11 @@ class CrimsonBearWatchface {
 
   start() {
     this.draw();
+    if (Natives.speakerAvailable && Natives.speakerAvailable()) {
+      this.hasSpeaker = true;
+      this.quietTime = Boolean(Natives.quietTime());
+      this.speakerReportPending = true;
+    }
     // @if helper
     // @else
     this.startBatteryService();
@@ -839,6 +850,23 @@ class CrimsonBearWatchface {
     // @else
     this.text("watchface", this.fonts.label, this.colors.white, center, 178, true);
     // @endif
+  }
+
+  // The phone hears whether this watch can sound its alarms, and whether
+  // Quiet Time (which can mute the speaker) is on: at start and on changes.
+  checkQuietTime() {
+    if (!this.hasSpeaker) return;
+    const quiet = Boolean(Natives.quietTime());
+    if (quiet === this.quietTime) return;
+    this.quietTime = quiet;
+    this.speakerReportPending = true;
+    this.flushOutbound();
+  }
+
+  // The alarm sound with an alarm buzz, when the phone asks for it: it sends
+  // the alert event (DATA index 9) negative. Older watches only compare it.
+  alarmBeep(event) {
+    if (this.hasSpeaker && event < 0) Natives.alarmBeep();
   }
 
   // Find my Pebble: covers everything until it ends.
@@ -2155,6 +2183,7 @@ class CrimsonBearWatchface {
   // Minute-only partial rendering
 
   drawMinute(event) {
+    this.checkQuietTime();
     if (!this.state.configured) return;
     // The alarm buzz every minute while the warning screen shows.
     if (this.hostChange || this.newProtocol) vibe();
@@ -2469,6 +2498,7 @@ class CrimsonBearWatchface {
     const request = this.bolusCommand;
     this.bolusCommand = null;
     this.refreshPending = false;
+    this.speakerReportPending = false;
     // "mute:30@…" answers "mute:ok", "signedbolus:0.5@…#…" "signedbolus:ok";
     // like the phone, a bolus with carbs ("signedbolus:0.5:10@…") is answered
     // "carbs:ok" first. Nothing is left pending, so the real send below returns at once.
@@ -2488,15 +2518,21 @@ class CrimsonBearWatchface {
     }
     // @endif
     // @if helper
-    if ((!this.refreshPending && !this.bolusCommand) || !this.message) return;
+    if ((!this.refreshPending && !this.bolusCommand && !this.speakerReportPending) || !this.message) return;
     // @else
-    if ((!this.refreshPending && !this.telemetryPending && !this.bolusCommand) || !this.message)
+    if (
+      (!this.refreshPending && !this.telemetryPending && !this.bolusCommand && !this.speakerReportPending) ||
+      !this.message
+    )
       return;
     // @endif
     const values = [];
-    // A bolus request takes the COMMAND key; a pending refresh follows it.
+    // A bolus request takes the COMMAND key; a pending refresh follows it, then
+    // the speaker report.
     const bolus = this.bolusCommand;
+    const speaker = !bolus && !this.refreshPending && this.speakerReportPending;
     if (bolus || this.refreshPending) values.push(["COMMAND", bolus || "refresh"]);
+    else if (speaker) values.push(["COMMAND", this.quietTime ? "speaker:quiet" : "speaker:on"]);
     // @if helper
     // @else
     if (this.telemetryPending)
@@ -2516,6 +2552,7 @@ class CrimsonBearWatchface {
       );
       // @endif
       if (bolus) this.bolusCommand = null;
+      else if (speaker) this.speakerReportPending = false;
       else
       if (this.refreshPending) {
         this.refreshPending = false;
@@ -2632,8 +2669,10 @@ class CrimsonBearWatchface {
     const event = this.state.alertEvent;
     // @if helper
     // The same buzz as Luped, without its buzz history.
-    if (this.lastAlertEvent !== undefined && event !== this.lastAlertEvent && this.state.hostAlertState > 0)
+    if (this.lastAlertEvent !== undefined && event !== this.lastAlertEvent && this.state.hostAlertState > 0) {
       vibe();
+      this.alarmBeep(event);
+    }
     // @else
     if (this.lastAlertEvent !== undefined && event !== this.lastAlertEvent) {
       if (this.state.hostAlertState > 0) {
@@ -2643,6 +2682,7 @@ class CrimsonBearWatchface {
         } catch (_) {
           buzz[3] = -2;
         }
+        this.alarmBeep(event);
         this.ensureDiagnosticsWindow();
         const buzzes = this.diagnostics.buzzes;
         buzzes.push(buzz);
