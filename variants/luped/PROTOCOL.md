@@ -38,6 +38,16 @@ showing data and shows "APP CHANGED" with both names and "Restart this
 watchface", forgets its bolus key and takes no new one, and buzzes the glucose
 alarm then and every minute until the watchface is restarted.
 
+**Presets (Luped Remote only).** `DATA` has no presets. Luped Remote asks with
+`COMMAND presets` and the host answers on the `PRESETS` key (10007, only Luped
+Remote declares it): `[overrides, temp targets]`, each `[[id, name, running], …]`
+(`running` 1 or 0, at most 16) or `null` for a kind the host doesn't have (Loop
+has no temp targets, so the remote offers none). Names are cleaned on the phone
+for the watch fonts (no control or invisible characters, emoji or symbols, at
+most 32 characters) and only shown. The remote starts one with `override:<id>`
+or `temptarget:<id>`, the id exactly as received: the host's own when it is
+plain (letters, digits, `.`, `_`, `-`), otherwise a `~` token the host maps back.
+
 **Protocol version (index 0).** A watch that gets `DATA` with a version above 1
 ignores it, shows "UPDATE NEEDED" and "Update this watchface", and buzzes the
 glucose alarm then and every minute. It shows data again once the phone sends

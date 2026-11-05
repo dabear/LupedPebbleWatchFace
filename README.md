@@ -148,9 +148,12 @@ its connecting screen.
   If the phone refuses (watch boluses off, no recent glucose) the remote says
   why at once; if it doesn't answer within 6 s (a phone without
   recommendations), the picker opens without one. After sending, the remote
-  keeps waiting after the carbs answer until the bolus answer arrives. The phone sends the
-  watch no preset names and they can't be typed on a watch, so the remote can
-  end a running override or temp target but not start one.
+  keeps waiting after the carbs answer until the bolus answer arrives.
+  **Presets** asks the phone for its presets (`presets`, answered on
+  `PRESETS`) and lists them to start one: override presets, then temp targets
+  when the phone has them (Trio, not Loop), the running one marked "(on)", long
+  names cut with "…", and End preset / End temp target for what runs. Each is
+  confirmed like any request.
 - **Settings** (on the watch, kept in its storage): default mute minutes, carb
   step and maximum, bolus step and maximum, Allow bolus. The phone still applies
   all of its own checks and limits.

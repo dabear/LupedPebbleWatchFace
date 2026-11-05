@@ -1,7 +1,7 @@
 {
   "name": "luped-remote",
   "author": "Luped CGM contributors",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "description": "A Loop/Trio remote watchapp for Pebble Time 2 and newer watches: reading, IOB and COB, and confirmed remote requests",
   "license": "MIT",
@@ -32,7 +32,8 @@
       "CONFIGURED",
       "DIAGNOSTICS",
       "RESULT",
-      "RECOMMEND"
+      "RECOMMEND",
+      "PRESETS"
     ],
     "resources": {
       "media": [

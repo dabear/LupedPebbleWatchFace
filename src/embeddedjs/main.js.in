@@ -59,8 +59,7 @@ const HOLD_MS = 2000;
 const ACTIONS = [
   { id: "mute", label: "Mute alerts" },
   { id: "carbs", label: "Add carbs" },
-  { id: "override", label: "End override" },
-  { id: "temptarget", label: "End temp target" },
+  { id: "override", label: "Presets" },
   { id: "bolus", label: "Bolus" },
   { id: "settings", label: "Settings" },
 ];
@@ -364,6 +363,10 @@ class CrimsonBearWatchface {
     this.asking = null;
     // The absorption chooser after carbs: { index, grams, then: "carbs" | "bolus" }.
     this.absorptionPick = null;
+    // Waiting for the phone's presets (PRESETS): { until }.
+    this.presetAsking = null;
+    // The preset list: { items, index }, each item { kind, presetID, name, running } or an End item.
+    this.presetPick = null;
     this.secondsLeft = AUTO_CLOSE_SECONDS;
     this.fonts.bold = new this.render.Font("Gothic-Bold", 18);
     for (const item of SETTINGS) {
@@ -929,6 +932,8 @@ class CrimsonBearWatchface {
       else if (this.view === "sending" && this.pending) this.helperSending(width, top);
       else if (this.view === "asking" && this.asking) this.helperAsking(width, top);
       else if (this.view === "absorption" && this.absorptionPick) this.helperAbsorption(width, top);
+      else if (this.view === "presets" && this.presetPick) this.helperPresets(width, top);
+      else if (this.view === "presetAsking" && this.presetAsking) this.helperPresetAsking(width, top);
       else if (this.view === "result" && this.result) this.helperOutcome(width, top);
       else this.helperMain(width, top);
     }
@@ -994,7 +999,9 @@ class CrimsonBearWatchface {
   helperResultText() {
     const [action, outcome = "", reason = ""] = this.result.split(":");
     const id = action.replace("signed", "").replace("forced", "");
-    const label = (ACTIONS.find((item) => item.id === id) || { label: action }).label;
+    // Results have their own names: presets and temp targets share one menu item.
+    const named = { override: "Preset", temptarget: "Temp target" }[id];
+    const label = named || (ACTIONS.find((item) => item.id === id) || { label: action }).label;
     const words = {
       ok: "The phone carried it out",
       refused: "The phone refused it",
@@ -1094,6 +1101,49 @@ class CrimsonBearWatchface {
     this.text("Back: hide", this.fonts.bold, ink, cx, top + 182, true);
   }
 
+  // The phone's presets (or temp targets) to start, the running one marked, and
+  // End running; five rows show at a time, scrolling with the selection.
+  helperPresets(width, top) {
+    const cx = width >> 1;
+    const margin = screen.round ? 28 : 4;
+    const { ink, white } = this.colors;
+    const { items, index } = this.presetPick;
+    this.helperTitle(width, top, "Presets");
+    if (!items.length) {
+      this.text("No presets on the phone", this.fonts.bold, ink, cx, top + 60, true);
+      this.text("Back: cancel", this.fonts.bold, ink, cx, top + 166, true);
+      return;
+    }
+    const rows = 5;
+    const first = Math.max(0, Math.min(items.length - rows, index - 2));
+    items.slice(first, first + rows).forEach((item, row) => {
+      const y = top + 32 + row * 26;
+      const selected = first + row === index;
+      if (selected) {
+        this.render.fillRectangle(ink, margin, y, width - 2 * margin, 25);
+        this.render.fillRectangle(this.colors.crimson, margin, y, 5, 25);
+      }
+      // ASCII only: the watch fonts have no symbols such as a bullet.
+      const suffix = item.running ? " (on)" : "";
+      const room = width - 2 * margin - 14 - (suffix ? this.render.getTextWidth(suffix, this.fonts.bold) : 0);
+      // Temp targets (Trio) follow the presets, marked as such.
+      const name = item.kind === "temptarget" && !item.end ? `Temp: ${item.name}` : item.name;
+      const label = `${this.helperFit(name, this.fonts.bold, room)}${suffix}`;
+      this.text(label, this.fonts.bold, selected ? white : item.end ? this.colors.low : ink, cx, y + 2, true);
+    });
+    if (first > 0) this.helperChevron(width - margin - 8, top + 34, -1, ink);
+    if (first + rows < items.length) this.helperChevron(width - margin - 8, top + 156, 1, ink);
+    this.text("Select: choose  Back: cancel", this.fonts.bold, ink, cx, top + 166, true);
+  }
+
+  // `text` cut to `maxWidth` with an ellipsis.
+  helperFit(text, font, maxWidth) {
+    if (this.render.getTextWidth(text, font) <= maxWidth) return text;
+    let cut = text;
+    while (cut.length > 1 && this.render.getTextWidth(`${cut}…`, font) > maxWidth) cut = cut.slice(0, -1);
+    return `${cut}…`;
+  }
+
   // Fast, medium or slow for the carbs just picked.
   helperAbsorption(width, top) {
     const cx = width >> 1;
@@ -1143,7 +1193,10 @@ class CrimsonBearWatchface {
 
   // Turns the wheel, repainting only its strip; stops once the answer is in.
   helperSpin() {
-    const turning = (this.pending && this.view === "sending") || (this.asking && this.view === "asking");
+    const turning =
+      (this.pending && this.view === "sending") ||
+      (this.asking && this.view === "asking") ||
+      (this.presetAsking && this.view === "presetAsking");
     if (!turning) {
       clearInterval(this.wheelTimer);
       this.wheelTimer = null;
@@ -1413,6 +1466,21 @@ class CrimsonBearWatchface {
           this.helperConfirmation("mute", `mute:${value}`, ["Mute alerts", `for ${value} min?`]);
         }
       }
+    } else if (view === "presets") {
+      const pick = this.presetPick;
+      if (pick.items.length) pick.index = Math.max(0, Math.min(pick.items.length - 1, pick.index - move));
+      if (back) this.view = "main";
+      const item = pick.items[pick.index];
+      if (select && item) {
+        const noun = item.kind === "override" ? "preset" : "temp target";
+        if (item.end) this.helperConfirmation(item.kind, `${item.kind}:cancel`, ["End the running", `${noun}?`]);
+        else this.helperConfirmation(item.kind, `${item.kind}:${item.presetID}`, [`Start ${noun}`, `${this.helperFit(item.name, this.fonts.fullLabel, this.render.width - 20)}?`]);
+      }
+    } else if (view === "presetAsking") {
+      if (back) {
+        this.presetAsking = null;
+        this.view = "main";
+      }
     } else if (view === "absorption") {
       const pick = this.absorptionPick;
       pick.index = Math.max(0, Math.min(ABSORPTIONS.length - 1, pick.index - move));
@@ -1480,9 +1548,13 @@ class CrimsonBearWatchface {
       Vibes.doublePulse();
       return;
     }
-    if (id === "override" || id === "temptarget") {
-      const name = id === "override" ? "override?" : "temp target?";
-      this.helperConfirmation(id, `${id}:cancel`, ["End the running", name]);
+    if (id === "override") {
+      // The phone's presets come when asked (PROTOCOL.md, Presets).
+      this.presetAsking = { until: Date.now() + RECOMMEND_TIMEOUT_MS };
+      this.view = "presetAsking";
+      this.bolusCommand = `presets@${Math.floor(Date.now() / 1000)}`;
+      this.flushOutbound();
+      if (!this.wheelTimer) this.wheelTimer = setInterval(() => this.helperSpin(), 100);
       return;
     }
     // A bolus starts with its carbs (0 g, the start, for none), then the
@@ -1528,6 +1600,40 @@ class CrimsonBearWatchface {
     this.bolusCommand = `recommend:${grams}${absorption ? `:${absorption}` : ""}@${Math.floor(Date.now() / 1000)}`;
     this.flushOutbound();
     if (!this.wheelTimer) this.wheelTimer = setInterval(() => this.helperSpin(), 100);
+  }
+
+  // The phone's presets, "[overrides, temp targets]", each [[id, name, running], …]
+  // or null for a kind it doesn't have (Loop: temp targets); `null` when it didn't
+  // answer. Ending is offered for a kind that runs, or for presets without a list.
+  helperPresetList(value) {
+    if (value != null && !this.presetAsking) return;
+    this.presetAsking = null;
+    let lists = [null, null];
+    try {
+      if (value != null) lists = JSON.parse(value);
+    } catch (_) {
+      lists = [null, null];
+    }
+    const items = [];
+    const ends = [];
+    [["override", "End preset"], ["temptarget", "End temp target"]].forEach(([kind, endName], at) => {
+      const list = Array.isArray(lists[at]) ? lists[at] : null;
+      const entries = (list || []).map(([presetID, name, running]) => ({ kind, presetID, name: String(name), running: Boolean(running) }));
+      items.push(...entries);
+      if (entries.some((entry) => entry.running) || (kind === "override" && !list)) ends.push({ kind, end: true, name: endName });
+    });
+    this.presetPick = { items: items.concat(ends), index: 0 };
+    this.view = "presets";
+  }
+
+  // While the phone sends its presets.
+  helperPresetAsking(width, top) {
+    const cx = width >> 1;
+    const { ink } = this.colors;
+    this.helperTitle(width, top, "Presets");
+    this.helperWheelFill();
+    this.text("Asking the phone", this.fonts.bold, ink, cx, top + 150, true);
+    this.text("Back: cancel", this.fonts.bold, ink, cx, top + 182, true);
   }
 
   // The phone's answer, "<grams>:ok:<units>:<max>" or "<grams>:<outcome>[:<reason>]".
@@ -1618,6 +1724,13 @@ class CrimsonBearWatchface {
       this.view = "result";
       this.secondsLeft = Math.max(this.secondsLeft, 15);
       Vibes.doublePulse();
+    }
+    if (this.presetAsking && now >= this.presetAsking.until) {
+      changed = true;
+      // No answer (an older phone): only ending a running preset is offered.
+      this.presetAsking = null;
+      this.bolusCommand = null;
+      this.helperPresetList(null);
     }
     if (this.asking && now >= this.asking.until) {
       changed = true;
@@ -2159,7 +2272,7 @@ class CrimsonBearWatchface {
     try {
       this.message = new Message({
         // @if helper
-        keys: ["COMMAND", "DATA", "ERROR", "CONFIGURED", "DIAGNOSTICS", "RESULT", "RECOMMEND"],
+        keys: ["COMMAND", "DATA", "ERROR", "CONFIGURED", "DIAGNOSTICS", "RESULT", "RECOMMEND", "PRESETS"],
         // @else
         keys: ["COMMAND", "DATA", "ERROR", "CONFIGURED", "DIAGNOSTICS", "RESULT"],
         // @endif
@@ -2288,7 +2401,10 @@ class CrimsonBearWatchface {
     // "carbs:ok" first. Nothing is left pending, so the real send below returns at once.
     // A recommendation request ("recommend:10@…") is answered on RECOMMEND
     // with 0.04 U per gram, up to 5 U (0.5 U without carbs).
-    if (request && request.startsWith("recommend:")) {
+    if (request && request.startsWith("presets")) {
+      const presets = [["p1", "Exercise", 0], ["p2", "Sick day with a long name", 1], ["p3", "Sleep", 0]];
+      setTimeout(() => demoReceive(this, [["PRESETS", JSON.stringify([presets, null])]]), 1000);
+    } else if (request && request.startsWith("recommend:")) {
       const grams = Number(request.split("@")[0].split(":")[1]);
       const units = Math.min(5, grams ? Math.round(grams * 4) / 100 : 0.5);
       setTimeout(() => demoReceive(this, [["RECOMMEND", `${grams}:ok:${units}:5`]]), 1500);
@@ -2475,6 +2591,11 @@ class CrimsonBearWatchface {
     for (const [key, value] of this.message.read()) {
       if (key === "RECOMMEND") {
         this.helperRecommendation(value);
+        needsFullDraw = true;
+        continue;
+      }
+      if (key === "PRESETS") {
+        this.helperPresetList(value);
         needsFullDraw = true;
         continue;
       }
