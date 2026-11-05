@@ -130,7 +130,8 @@ its connecting screen.
   the phone answers, then Done or Not done (with the reason) and a buzz: short
   when done, double when not. Back hides the wheel. Without a phone connection
   the actions are dimmed and can't be opened.
-- **Actions:** Mute alerts (`mute:<minutes>`), Add carbs (`carbs:<grams>`), End
+- **Actions:** Mute alerts (`mute:<minutes>`, a list of Loop's durations:
+  30 min, 1, 2 or 4 hours, and End mute as `mute:cancel`), Add carbs (`carbs:<grams>`), End
   override (`override:cancel`), End temp target (`temptarget:cancel`), and Bolus,
   only as Luped's signed bolus (`signedbolus:<units>`, or
   `signedbolus:<units>:<grams>` with carbs, which the phone adds first and gives
@@ -154,7 +155,7 @@ its connecting screen.
   when the phone has them (Trio, not Loop), the running one marked "(on)", long
   names cut with "…", and End preset / End temp target for what runs. Each is
   confirmed like any request.
-- **Settings** (on the watch, kept in its storage): default mute minutes, carb
+- **Settings** (on the watch, kept in its storage): the mute duration selected first, carb
   step and maximum, bolus step and maximum, Allow bolus. The phone still applies
   all of its own checks and limits.
 - **Auto-close:** the app returns to the watchface after a minute without a

@@ -66,7 +66,8 @@ const ACTIONS = [
 // The watch's own settings, kept in localStorage on the watch. Each value is one
 // of its options; bolus is off until the user turns it on here.
 const SETTINGS = [
-  { id: "mute", label: "Mute", unit: "min", options: [15, 30, 60, 90, 120, 180, 240], value: 30 },
+  // Loop mutes for 30 min, 1, 2 or 4 hours (a longer one is rounded up).
+  { id: "mute", label: "Mute", unit: "min", options: [30, 60, 120, 240], value: 30 },
   { id: "carbStep", label: "Carb step", unit: "g", options: [1, 5, 10], value: 5 },
   { id: "carbMax", label: "Carb max", unit: "g", options: [10, 20, 30, 50, 75, 100], value: 50 },
   { id: "bolusStep", label: "Bolus step", unit: "U", options: [0.05, 0.1, 0.25, 0.5], value: 0.1 },
@@ -1102,13 +1103,13 @@ class CrimsonBearWatchface {
   }
 
   // The phone's presets (or temp targets) to start, the running one marked, and
-  // End running; five rows show at a time, scrolling with the selection.
+  // End running, or the mute durations and End mute; five rows show at a time, scrolling with the selection.
   helperPresets(width, top) {
     const cx = width >> 1;
     const margin = screen.round ? 28 : 4;
     const { ink, white } = this.colors;
     const { items, index } = this.presetPick;
-    this.helperTitle(width, top, "Presets");
+    this.helperTitle(width, top, this.presetPick.title || "Presets");
     if (!items.length) {
       this.text("No presets on the phone", this.fonts.bold, ink, cx, top + 60, true);
       this.text("Back: cancel", this.fonts.bold, ink, cx, top + 166, true);
@@ -1461,9 +1462,6 @@ class CrimsonBearWatchface {
           this.helperConfirmation("bolus", `signedbolus:${value}${carbs}`, lines);
           this.confirmation.units = value;
           this.confirmation.recommended = picker.recommended;
-        } else {
-          // Mute (carbs always go on to their absorption).
-          this.helperConfirmation("mute", `mute:${value}`, ["Mute alerts", `for ${value} min?`]);
         }
       }
     } else if (view === "presets") {
@@ -1471,7 +1469,10 @@ class CrimsonBearWatchface {
       if (pick.items.length) pick.index = Math.max(0, Math.min(pick.items.length - 1, pick.index - move));
       if (back) this.view = "main";
       const item = pick.items[pick.index];
-      if (select && item) {
+      if (select && item && item.kind === "mute") {
+        if (item.end) this.helperConfirmation("mute", "mute:cancel", ["End the mute", "of alerts?"]);
+        else this.helperConfirmation("mute", `mute:${item.minutes}`, ["Mute alerts", `for ${item.name}?`]);
+      } else if (select && item) {
         const noun = item.kind === "override" ? "preset" : "temp target";
         if (item.end) this.helperConfirmation(item.kind, `${item.kind}:cancel`, ["End the running", `${noun}?`]);
         else this.helperConfirmation(item.kind, `${item.kind}:${item.presetID}`, [`Start ${noun}`, `${this.helperFit(item.name, this.fonts.fullLabel, this.render.width - 20)}?`]);
@@ -1548,6 +1549,16 @@ class CrimsonBearWatchface {
       Vibes.doublePulse();
       return;
     }
+    if (id === "mute") {
+      // Loop's durations, and End mute (PROTOCOL.md, mute:cancel); the watch
+      // can't tell whether Loop's alerts are muted now.
+      const { options } = SETTINGS.find((item) => item.id === "mute");
+      const items = options.map((minutes) => ({ kind: "mute", minutes, name: minutes < 60 ? `${minutes} min` : `${minutes / 60} hour${minutes > 60 ? "s" : ""}` }));
+      items.push({ kind: "mute", end: true, name: "End mute" });
+      this.presetPick = { title: "Mute alerts", items, index: Math.max(0, options.indexOf(setting("mute"))) };
+      this.view = "presets";
+      return;
+    }
     if (id === "override") {
       // The phone's presets come when asked (PROTOCOL.md, Presets).
       this.presetAsking = { until: Date.now() + RECOMMEND_TIMEOUT_MS };
@@ -1573,14 +1584,14 @@ class CrimsonBearWatchface {
       this.view = "amount";
       return;
     }
-    const step = id === "mute" ? 15 : setting(id === "carbs" ? "carbStep" : "bolusStep");
-    const max = id === "mute" ? 240 : setting(id === "carbs" ? "carbMax" : "bolusMax");
+    const step = setting(id === "carbs" ? "carbStep" : "bolusStep");
+    const max = setting(id === "carbs" ? "carbMax" : "bolusMax");
     this.picker = {
       action: id,
       label: ACTIONS.find((action) => action.id === id).label,
-      unit: id === "mute" ? "min" : id === "carbs" ? "g" : "U",
+      unit: id === "carbs" ? "g" : "U",
       step,
-      count: id === "mute" ? setting("mute") / 15 : 1,
+      count: 1,
       maxCount: Math.max(1, Math.floor(max / step + 1e-9)),
     };
     this.view = "amount";

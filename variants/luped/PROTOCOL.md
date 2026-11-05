@@ -108,7 +108,8 @@ The app may send `ERROR` for a temporary data-source error. It may request a
 diagnostic snapshot with `COMMAND: "diagnostics"` or reset counters with
 `COMMAND: "diagnostics-reset"`. The watch responds on `DIAGNOSTICS`.
 The watch may ask the host for an action with `COMMAND`: `mute:<minutes>`
-(mute its alerts) or `carbs:<grams>[:<absorption>]`, with the amount chosen on the watch
+(mute its alerts; Loop mutes for 30, 60, 120 or 240 minutes, rounding up) or
+`mute:cancel` (end the mute), or `carbs:<grams>[:<absorption>]`, with the amount chosen on the watch
 and, optionally, how fast the carbs are absorbed: `fast`, `medium` or `slow`
 (the host maps them to its own absorption times; without it, its default),
 `override:<preset>` (start the host's override preset with that id, or that
