@@ -313,6 +313,8 @@ prepare_stage() {
   else
     cp "variants/$variant/src/c/mdbl.c" "$stage/src/c/mdbl.c"
   fi
+  # Shared C for every variant (the speaker for Find my Pebble).
+  cp src/c/natives.c "$stage/src/c/natives.c"
   assemble_watchface \
     src/embeddedjs/main.js.in \
     "variants/$variant/watchface-config.json" \

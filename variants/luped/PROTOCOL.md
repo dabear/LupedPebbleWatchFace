@@ -107,6 +107,18 @@ reading becomes 15 minutes old.
 The app may send `ERROR` for a temporary data-source error. It may request a
 diagnostic snapshot with `COMMAND: "diagnostics"` or reset counters with
 `COMMAND: "diagnostics-reset"`. The watch responds on `DIAGNOSTICS`.
+
+Find my Pebble: the host sends `COMMAND: "findpebble:<seconds>"` (Loop sends 60)
+to whichever of Luped and Luped Remote is running. The watch buzzes back to
+back and, on watches with a speaker, beeps every 2.5 seconds, with the backlight
+on and a full "Find my Pebble" screen, for that many seconds (at most 300), or
+until any button
+is pressed (on the watchface that leaves the face, which ends it too) or the
+host sends `findpebble:0`. The watch doesn't answer; the message's ACK or NACK
+tells the host whether a running app received it. Watches older than Luped
+0.1.24 and Luped Remote 0.1.6 ignore it, as they ignore any `COMMAND` they
+don't know.
+
 The watch may ask the host for an action with `COMMAND`: `mute:<minutes>`
 (mute its alerts; Loop mutes for 30, 60, 120 or 240 minutes, rounding up) or
 `mute:cancel` (end the mute), or `carbs:<grams>[:<absorption>]`, with the amount chosen on the watch

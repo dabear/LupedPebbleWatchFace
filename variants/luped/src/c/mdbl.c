@@ -29,6 +29,7 @@ int main(void) {
     .stack = LUPED_XS_STACK,
     .slot = LUPED_XS_SLOT,
     .chunk = LUPED_XS_CHUNK,
+    .fxBuildFFI = fxBuildFFI, // src/c/natives.c: Find my Pebble's sound
 #ifdef PBL_DEBUG
     .flags = LUPED_XS_FLAGS | kModdableCreationFlagDebug
 #else

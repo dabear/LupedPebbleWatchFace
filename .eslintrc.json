@@ -12,6 +12,7 @@
     "Battery": "readonly",
     "Message": "readonly",
     "module": "readonly",
+    "Natives": "readonly",
     "Pebble": "readonly",
     "Poco": "readonly",
     "require": "readonly",

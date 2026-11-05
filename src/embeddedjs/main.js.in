@@ -243,6 +243,12 @@ const DIAGNOSTICS_PIGGYBACK_GRACE_MS = 15 * 60 * 1000;
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // @endif
 
+// Find my Pebble (COMMAND findpebble:<seconds>, PROTOCOL.md): at most 5 minutes,
+// beeps (1.1 s, on watches with a speaker) every 2.5 s, and the alarm buzz
+// (4.7 s) on every other one, so it runs back to back.
+const FIND_MAX_SECONDS = 300;
+const FIND_REPEAT_MS = 2500;
+
 // Trend-arrow stroke tables are constant; keep them out of the per-draw path.
 const ARROW_GLYPHS = {
   DoubleUp: [
@@ -324,6 +330,9 @@ class CrimsonBearWatchface {
     };
     this.configurationKnown = false;
     this.stale = false;
+    this.findUntil = 0;
+    this.findTimer = null;
+    this.findSteps = 0;
     this.lastDataSignature = null;
     this.footerState = {
       clock: null,
@@ -832,6 +841,47 @@ class CrimsonBearWatchface {
     // @endif
   }
 
+  // Find my Pebble: covers everything until it ends.
+  findScreen(width, height) {
+    const center = width >> 1;
+    this.render.fillRectangle(this.colors.bluetooth, 0, 0, width, height);
+    this.text("FIND MY PEBBLE", this.fonts.delta, this.colors.white, center, 80, true);
+    this.text("Your phone is looking", this.fonts.label, this.colors.white, center, 116, true);
+    this.text("Press any button", this.fonts.label, this.colors.white, center, 146, true);
+  }
+
+  // Beeps (src/c/natives.c, the global Natives) every FIND_REPEAT_MS and buzzes
+  // every other time, with the light on and the find screen up, until the time
+  // is up or the phone sends findpebble:0. In Luped Remote any
+  // button ends it; on the watchface any button leaves the face, which ends it.
+  findPebble(seconds) {
+    const wasFinding = this.findUntil;
+    if (this.findTimer) clearInterval(this.findTimer);
+    this.findTimer = null;
+    this.findUntil = seconds > 0 ? Date.now() + Math.min(seconds, FIND_MAX_SECONDS) * 1000 : 0;
+    if (this.findUntil) {
+      this.findSteps = 0;
+      watch.light(true);
+      this.findStep();
+      this.findTimer = setInterval(() => this.findStep(), FIND_REPEAT_MS);
+    } else if (wasFinding) {
+      Vibes.cancel();
+      if (Natives.findPebbleQuiet) Natives.findPebbleQuiet();
+      watch.light(false);
+    }
+    if (wasFinding || this.findUntil) this.draw();
+  }
+
+  findStep() {
+    if (Date.now() >= this.findUntil) {
+      this.findPebble(0);
+      return;
+    }
+    if (this.findSteps % 2 === 0) vibe();
+    this.findSteps += 1;
+    if (Natives.findPebbleBeep) Natives.findPebbleBeep();
+  }
+
   setupScreen(width, height) {
     const center = width >> 1;
     const phoneWidth = 42;
@@ -922,7 +972,8 @@ class CrimsonBearWatchface {
     const { width, height } = this.render;
     const header = this.helperHeaderHeight();
     const top = header + (screen.round ? 4 : 2);
-    if (this.hostChange || this.newProtocol) this.warningScreen(width, height);
+    if (this.findUntil) this.findScreen(width, height);
+    else if (this.hostChange || this.newProtocol) this.warningScreen(width, height);
     else if (!this.configurationKnown) this.connectingScreen(width, height);
     else if (!this.state.configured) this.setupScreen(width, height);
     else {
@@ -1203,6 +1254,7 @@ class CrimsonBearWatchface {
       this.wheelTimer = null;
       return;
     }
+    if (this.findUntil) return;
     this.wheelAngle = ((this.wheelAngle || 0) + 30) % 360;
     const [, cy, r] = this.helperWheel();
     let began = false;
@@ -1346,6 +1398,7 @@ class CrimsonBearWatchface {
       return;
     }
     this.held[button] = now;
+    if (this.findUntil) return;
     const times = ["up", "down"].map((name) => this.held[name]);
     if (this.view !== "confirm" || times.some((time) => time == null || now - time > CHORD_MS)) return;
     this.chordAt = now;
@@ -1406,6 +1459,11 @@ class CrimsonBearWatchface {
   }
 
   helperPress(button) {
+    // Any button ends Find my Pebble, and does nothing else.
+    if (this.findUntil) {
+      this.findPebble(0);
+      return;
+    }
     // A chord's own clicks arrive as its buttons are released: ignore clicks
     // until 300 ms after both are up (or 3 s, should a release get lost).
     if (this.chordAt) {
@@ -1751,7 +1809,7 @@ class CrimsonBearWatchface {
       this.bolusCommand = null;
       this.helperBolusPicker(asking, null, null, "No answer from the phone");
     }
-    if (!this.pending) this.secondsLeft -= 1;
+    if (!this.pending && !this.findUntil) this.secondsLeft -= 1;
     if (this.secondsLeft <= 0) {
       // APP_EXIT_ACTION_PERFORMED_SUCCESSFULLY: back to the watchface, not the launcher.
       watch.exit(1);
@@ -1936,6 +1994,10 @@ class CrimsonBearWatchface {
     const footerHeight = 30;
     const headerHeight = Math.round(height * 0.54);
     const now = new Date();
+    if (this.findUntil) {
+      this.findScreen(width, height);
+      return;
+    }
     if (this.hostChange || this.newProtocol) {
       this.warningScreen(width, height);
       return;
@@ -2052,8 +2114,8 @@ class CrimsonBearWatchface {
       this.state.configured &&
       this.hasRenderedConfiguredFace &&
       this.lastRenderedFullScreen === this.state.fullScreen;
-    // The warning screen covers the footer too.
-    if (this.hostChange || this.newProtocol) contentOnly = false;
+    // The warning and find screens cover the footer too.
+    if (this.hostChange || this.newProtocol || this.findUntil) contentOnly = false;
     // @if helper
     // The remote shows one whole screen at a time and repaints all of it.
     contentOnly = false;
@@ -2071,7 +2133,7 @@ class CrimsonBearWatchface {
       this.render.end();
       this.hasRenderedConfiguredFace = this.state.configured;
       // The warning screen isn't the face: the first draw after it repaints all of it.
-      if (this.hostChange || this.newProtocol) this.hasRenderedConfiguredFace = false;
+      if (this.hostChange || this.newProtocol || this.findUntil) this.hasRenderedConfiguredFace = false;
       this.lastRenderedFullScreen = this.state.fullScreen;
       this.recordDraw("full", startedAt, invalidatedPixels);
       this.renderRetryCount = 0;
@@ -2149,7 +2211,7 @@ class CrimsonBearWatchface {
   // @else
   drawMinuteNow(minuteDate = null) {
     if (!this.state.configured) return;
-    if (this.hostChange || this.newProtocol) return;
+    if (this.hostChange || this.newProtocol || this.findUntil) return;
     const startedAt = Date.now();
     const footerHeight = 30;
     const footerY = this.render.height - footerHeight;
@@ -2752,6 +2814,8 @@ class CrimsonBearWatchface {
           this.state.configured !== configured;
         this.configurationKnown = true;
         this.state.configured = configured;
+      } else if (key === "COMMAND" && value.startsWith("findpebble:")) {
+        this.findPebble(Number(value.slice(11)) || 0);
       } else if (key === "COMMAND" && value.startsWith("auth:v1:") && !this.hostChange) {
         // The phone's session key for signed boluses, kept in memory only: a
         // restart forgets it and the phone sends a new one.
