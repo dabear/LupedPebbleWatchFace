@@ -111,8 +111,11 @@ diagnostic snapshot with `COMMAND: "diagnostics"` or reset counters with
 Alarm sound: a watch with a speaker (Pebble Time 2; Luped 0.1.25, Luped Remote
 0.1.7) tells the host with `COMMAND: "speaker:on"`, or `"speaker:quiet"` while
 the watch's Quiet Time is on (which mutes the speaker if the user set it to),
-after its startup `refresh` and whenever Quiet Time starts or ends. Watches
-without a speaker, and older ones, never send it, so the host offers the sound
+after its startup `refresh`, whenever Quiet Time starts or ends, and when the
+host asks with `COMMAND: "speaker"` (Luped 0.1.26, Luped Remote 0.1.8; the
+host asks while it doesn't know, for example after the watch was added again
+with the app still running). Watches without a speaker, and older ones, never
+send it, so the host offers the sound
 only for watches that did. To sound an alarm as well as buzz it, the host sends
 its alert event (index 9) negative: older watches only compare the value, so
 they buzz as before. The sound plays at the watch's speaker volume and never

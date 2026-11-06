@@ -2856,6 +2856,11 @@ class CrimsonBearWatchface {
         this.state.configured = configured;
       } else if (key === "COMMAND" && value.startsWith("findpebble:")) {
         this.findPebble(Number(value.slice(11)) || 0);
+      } else if (key === "COMMAND" && value === "speaker") {
+        // The phone asks whether this watch has a speaker, for example after
+        // the watch was added again while this app kept running; the report
+        // goes out with the flush below.
+        if (this.hasSpeaker) this.speakerReportPending = true;
       } else if (key === "COMMAND" && value.startsWith("auth:v1:") && !this.hostChange) {
         // The phone's session key for signed boluses, kept in memory only: a
         // restart forgets it and the phone sends a new one.
