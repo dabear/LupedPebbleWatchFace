@@ -8,7 +8,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint --env node \"scripts/*.cjs\"",
-    "test": "node scripts/test-luped-signing.cjs && node scripts/test-luped-warnings.cjs",
+    "test": "node scripts/test-luped-signing.cjs && node scripts/test-luped-warnings.cjs && node scripts/test-luped-states.cjs",
     "release": "./scripts/build-release.sh"
   },
   "devDependencies": {

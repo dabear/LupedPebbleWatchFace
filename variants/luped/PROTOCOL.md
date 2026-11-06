@@ -36,7 +36,9 @@ The watch keeps the first name it gets after it starts; `DATA` without a name
 changes nothing. If a later `DATA` names a different app, the watch stops
 showing data and shows "APP CHANGED" with both names and "Restart this
 watchface", forgets its bolus key and takes no new one, and buzzes the glucose
-alarm then and every minute until the watchface is restarted.
+alarm then and every minute until the watchface is restarted. From then on it
+drops `DATA` naming the other app (alarms included) and keeps following the
+first one.
 
 **Presets (Luped Remote only).** `DATA` has no presets. Luped Remote asks with
 `COMMAND presets` and the host answers on the `PRESETS` key (10007, only Luped

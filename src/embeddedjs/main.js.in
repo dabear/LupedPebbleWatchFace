@@ -1006,18 +1006,34 @@ class CrimsonBearWatchface {
     else if (!this.state.configured) this.setupScreen(width, height);
     else {
       this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
-      if (this.view === "amount") this.helperAmount(width, top);
-      else if (this.view === "confirm") this.helperConfirm(width, top);
-      else if (this.view === "settings") this.helperSettings(width, top);
-      else if (this.view === "sending" && this.pending) this.helperSending(width, top);
-      else if (this.view === "asking" && this.asking) this.helperAsking(width, top);
-      else if (this.view === "absorption" && this.absorptionPick) this.helperAbsorption(width, top);
-      else if (this.view === "presets" && this.presetPick) this.helperPresets(width, top);
-      else if (this.view === "presetAsking" && this.presetAsking) this.helperPresetAsking(width, top);
-      else if (this.view === "result" && this.result) this.helperOutcome(width, top);
+      const view = this.helperView();
+      if (view === "amount") this.helperAmount(width, top);
+      else if (view === "confirm") this.helperConfirm(width, top);
+      else if (view === "settings") this.helperSettings(width, top);
+      else if (view === "sending") this.helperSending(width, top);
+      else if (view === "asking") this.helperAsking(width, top);
+      else if (view === "absorption") this.helperAbsorption(width, top);
+      else if (view === "presets") this.helperPresets(width, top);
+      else if (view === "presetAsking") this.helperPresetAsking(width, top);
+      else if (view === "result") this.helperOutcome(width, top);
       else this.helperMain(width, top);
     }
     this.helperHeader(width, header);
+  }
+
+  // The screen that shows, and that the buttons act on: a view whose request
+  // or answer has gone (the answer's minute is up, the wait ended) is the main
+  // screen.
+  helperView() {
+    const needs = {
+      sending: this.pending,
+      asking: this.asking,
+      absorption: this.absorptionPick,
+      presets: this.presetPick,
+      presetAsking: this.presetAsking,
+      result: this.result,
+    };
+    return this.view in needs && !needs[this.view] ? "main" : this.view;
   }
 
   helperHeaderHeight() {
@@ -1504,7 +1520,9 @@ class CrimsonBearWatchface {
     const move = button === "up" ? 1 : button === "down" ? -1 : 0;
     const select = button === "select";
     const back = button === "back";
-    const view = this.hostChange || this.newProtocol || !this.state.configured ? "main" : this.view;
+    const covered = this.hostChange || this.newProtocol || !this.state.configured;
+    if (!covered) this.view = this.helperView();
+    const view = covered ? "main" : this.view;
     if (view === "main") {
       // While a request waits (30 s at most), Back shows it again instead of
       // closing the app, so its answer isn't missed.
@@ -1621,8 +1639,9 @@ class CrimsonBearWatchface {
       this.editing = null;
       return;
     }
-    // Without the bolus key, say why on the answer screen.
-    if (id === "bolus" && this.isConnected && !this.bolusAuth) {
+    // Without the bolus key, say why on the answer screen (not while a request
+    // waits: that wait's screen and answer come first).
+    if (id === "bolus" && this.isConnected && !this.bolusAuth && !this.pending) {
       this.result = "bolus:no key";
       this.resultUntil = Date.now() + 60000;
       this.view = "result";
@@ -2670,12 +2689,17 @@ class CrimsonBearWatchface {
     // @if helper
     // The same buzz as Luped, without its buzz history.
     if (this.lastAlertEvent !== undefined && event !== this.lastAlertEvent && this.state.hostAlertState > 0) {
+      if (this.findUntil) this.findPebble(0);
       vibe();
       this.alarmBeep(event);
     }
     // @else
     if (this.lastAlertEvent !== undefined && event !== this.lastAlertEvent) {
       if (this.state.hostAlertState > 0) {
+        // Find my Pebble's back-to-back buzz and beeps would drop the alarm's
+        // (PebbleOS drops a buzz that starts while another plays), and its end
+        // would cancel it: the alarm ends the search, then buzzes.
+        if (this.findUntil) this.findPebble(0);
         const buzz = [event, this.state.hostAlertState, Date.now(), this.coveredAt ? 0 : -1];
         try {
           vibe();
@@ -2783,14 +2807,20 @@ class CrimsonBearWatchface {
           };
           // The first host app named (index 15) is the one this run follows;
           // a different one later means two phone apps share the watch, so
-          // the face stops showing data until it is restarted.
+          // the face stops showing data until it is restarted. The other app's
+          // data is dropped: taking turns, the two apps' alert events would
+          // differ on every message and buzz each one as a new alarm.
           const host = values[15];
           if (host != null && this.host == null) this.host = host;
-          else if (host != null && host !== this.host && !this.hostChange) {
-            this.hostChange = [this.host, host];
-            this.bolusAuth = null;
-            needsFullDraw = true;
-            vibe();
+          else if (host != null && host !== this.host) {
+            if (!this.hostChange) {
+              this.hostChange = [this.host, host];
+              this.bolusAuth = null;
+              needsFullDraw = true;
+              vibe();
+            }
+            this.refreshPending = false;
+            continue;
           }
           const signature = JSON.stringify(data);
           const readingAdvanced = Number(data.updated) !== Number(this.state.updated);
@@ -2829,6 +2859,12 @@ class CrimsonBearWatchface {
           needsFullDraw = true;
           continue;
         }
+        // Only an answer for the waiting request's action ends the wait: the
+        // phone resends answers, and one for an earlier request (one that timed
+        // out) still shows, but doesn't let a second request go out while this
+        // one is being carried out.
+        const answers = value.split(":")[0].replace("signed", "").replace("forced", "");
+        const forPending = Boolean(this.pending) && answers === this.pending.action;
         // @endif
         // The phone's "<action>:<outcome>" for a watch request (on the watchface
         // too when Luped Remote closed before the answer), shown for a minute or
@@ -2842,8 +2878,10 @@ class CrimsonBearWatchface {
         // @if helper
         // The answer ends the wait: show it (the buzz above tells the wearer),
         // and leave time to read it before closing.
-        if (this.pending) this.view = "result";
-        this.pending = null;
+        if (forPending) {
+          this.view = "result";
+          this.pending = null;
+        }
         this.secondsLeft = Math.max(this.secondsLeft, 15);
         // @endif
       } else if (key === "CONFIGURED") {

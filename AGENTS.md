@@ -66,6 +66,13 @@
 - `demoTestOnly` (every variant's config lists it; publishing refuses it) builds a test version that needs no phone: sample `DATA` and a test bolus key arrive at startup, the phone always counts as connected, and each request gets `<action>:ok` after 3 s instead of being sent (`signedbolus:ok` for a bolus, as Loop answers). Set it to true in `variants/lupedhelper/watchface-config.json` only for the build, then back to false. Its status line reads "Connected to test data".
 - `pebble emu-bt-connection --connected no` doesn't reach the app (no `connected` event, the status stays connected); to test the disconnected state, call `setPhoneConnected(false)` from a temporary fixture.
 
+## State machines
+
+- `STATE_MACHINES.md` lists the app's state machines (screen cover, Find my Pebble, outbound queue, render scheduler, freshness, host alarm, answer, bolus key, the remote's views), their invariants and transition tables, and the issues found with their fixes. Update it in the same change as any new state, transition or timeout. `scripts/test-luped-states.cjs` (in `npm test`) assembles each variant into a vm and drives those transitions; a regression test there must fail on the code before its fix.
+- Luped Remote: only a `RESULT` for the waiting request's action (`signed`/`forced` stripped) ends `pending`; others still show. The phone resends answers, and a timed-out request can still be answered late, so never end a wait on any answer.
+- Luped Remote: `helperView()` is the screen both `face()` and `helperPress()` use; a view whose object (`pending`, `asking`, `result`, …) is gone is `main`.
+- An alarm buzz ends Find my Pebble first: find's back-to-back buzz would make PebbleOS drop the alarm's, and find's end cancels vibration and sound.
+
 ## Rendering invariants
 
 - The footer owns cached state for clock, date, battery, and Bluetooth independently.
