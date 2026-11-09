@@ -167,8 +167,9 @@ plugin doesn't offer it) and `failed`. An answer that isn't `ok` may add the
 reason as a third field, `<action>:<outcome>:<reason>` (for example
 `carbs:refused:too soon`): `not allowed`, `too soon`, `over max`,
 `over recommended`, `daily limit`, `too old`, `no recent glucose`,
-`no such preset`, `in progress`, `invalid amount`, `old key` or `not verified`
-(LupedKit's `LupedResultReason`; short, lowercase, never a `:`). A watch reads
+`no such preset`, `in progress`, `invalid amount`, `old key`, `not verified` or
+`check pump` (a bolus the pump didn't confirm, which it may have delivered in
+part; LupedKit's `LupedResultReason`; short, lowercase, never a `:`). A watch reads
 the first two fields and may ignore the rest, so older watches keep working;
 an `ok` answer never has a reason, as watches buzz "done" for answers ending in
 `:ok`. The full reason is in the host's log.
