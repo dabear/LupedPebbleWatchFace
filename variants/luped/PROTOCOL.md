@@ -260,8 +260,10 @@ vibration while another one plays and cancels it when a system pop-up closes,
 so the outcome records whether a pop-up covered the watchface during the
 4.7-second buzz: `-2` the buzz call failed, `-1` not covered, `0` already
 covered when the buzz started, otherwise the milliseconds into the buzz. Index
-40 counts alert events that arrived while Watch Alarms was off (level 0, no
-buzz).
+40 counts alert events that arrived without an active alert (index 8 at 0 or
+below), so the watch didn't buzz: Watch Alarms off (negative), or a new alert
+number with no alert, as when the phone app's watch was added again (it starts
+at a random number).
 
 Loop delivers these messages over its own PPoGATT session (the watch stays
 connected to the Pebble app at the same time) through the LupedSmartwatchKit
