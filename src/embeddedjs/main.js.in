@@ -1550,9 +1550,12 @@ class CrimsonBearWatchface {
         if (picker.action === "bolusCarbs" || (picker.action === "carbs" && value)) {
           // Carbs get their absorption next (none to choose for 0 g), then a
           // bolus the phone's recommendation for them.
-          if (value) this.absorptionPick = { index: 1, grams: value, then: picker.action === "carbs" ? "carbs" : "bolus" };
-          if (value) this.view = "absorption";
-          else this.helperAskRecommendation(0, null);
+          // Hosts without per-entry absorption (Trio) aren't asked for one.
+          if (value && this.asksAbsorption !== false) {
+            this.absorptionPick = { index: 1, grams: value, then: picker.action === "carbs" ? "carbs" : "bolus" };
+            this.view = "absorption";
+          } else if (picker.action === "carbs") this.helperConfirmation("carbs", `carbs:${value}`, [`Add ${value} g`, "carbs?"]);
+          else this.helperAskRecommendation(value, null);
         } else if (picker.action === "bolus") {
           // A bolus may come with carbs, which the phone adds first (and
           // gives no bolus if it can't).
@@ -2822,6 +2825,11 @@ class CrimsonBearWatchface {
             this.refreshPending = false;
             continue;
           }
+          // @if helper
+          // Index 16 is 0 when the host doesn't use carb absorption (Trio's
+          // oref), so the remote doesn't ask for it; absent from older hosts.
+          this.asksAbsorption = values[16] !== 0;
+          // @endif
           const signature = JSON.stringify(data);
           const readingAdvanced = Number(data.updated) !== Number(this.state.updated);
           needsFullDraw =

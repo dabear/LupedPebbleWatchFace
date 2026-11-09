@@ -8,8 +8,8 @@ The mobile app should send `CONFIGURED: 1` and a `DATA` JSON array whenever
 settings change, when a new glucose sample arrives, when its alerts change, and
 in response to the watch's one-time startup `COMMAND: "refresh"` request.
 
-`DATA` is a 16-element array (protocol version 1); hosts may send only the
-first 10, and the watch reads every field by index:
+`DATA` is a 16-element array (protocol version 1), 17 for Luped Remote; hosts
+may send only the first 10, and the watch reads every field by index:
 
 | Index | Value                                                                                                                  |
 | ----: | ---------------------------------------------------------------------------------------------------------------------- |
@@ -28,7 +28,8 @@ first 10, and the watch reads every field by index:
 |    12 | Last loop completed (ms since Unix epoch), or `null`                                                                   |
 |    13 | Closed loop: `1`, open loop: `0`, or `null`                                                                            |
 |    14 | Status line the phone formatted (ISF & target as `ISF<tab>target` around the ring), or `null`                          |
-|    15 | Name of the host app sending it, such as `"Loop"` or `"Trio"`                                                          |
+|    15 | Name of the host app sending it, such as `"Loop"` or `"Trio"`; `null` if unknown when index 16 follows                 |
+|    16 | Luped Remote only: `1` the host uses carb absorption, `0` it doesn't (Luped Remote then doesn't ask for it)            |
 
 **Host app (index 15).** Only one app on the phone should use the watch at a
 time: if two apps both host Luped, the watch follows whichever it connects to.
@@ -39,6 +40,14 @@ watchface", forgets its bolus key and takes no new one, and buzzes the glucose
 alarm then and every minute until the watchface is restarted. From then on it
 drops `DATA` naming the other app (alarms included) and keeps following the
 first one.
+
+**Carb absorption (index 16, Luped Remote only).** After the grams of Add carbs
+or of a bolus's carbs, Luped Remote asks how fast they are absorbed (fast,
+medium or slow) and sends it with the request. A host whose carb model has no
+per-entry absorption (Trio's oref) sends `0`: Luped Remote then skips the
+question and sends `carbs:<g>`, `recommend:<g>` and `signedbolus:<units>:<g>`
+without one. A missing index 16 (older hosts) means the host uses it. The
+watchface's `DATA` has no index 16.
 
 **Presets (Luped Remote only).** `DATA` has no presets. Luped Remote asks with
 `COMMAND presets` and the host answers on the `PRESETS` key (10007, only Luped
