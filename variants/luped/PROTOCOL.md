@@ -197,8 +197,8 @@ is dropped. The answer is `<grams>:ok:<units>:<maximum bolus>` (for example
 `<grams>:<outcome>[:<reason>]` with the outcomes and reasons of `RESULT` (for
 example `10:refused:not allowed`, `0:ignored` from a host without them). Loop
 answers only while its user allows boluses from the watch and its glucose is
-recent, with the carbs as the entry they would become (medium absorption,
-dated now); the bolus itself is still checked when it comes, against the
+recent, with the carbs as the entry they would become (the chosen
+absorption, medium without one, dated now); the bolus itself is still checked when it comes, against the
 recommendation after the carbs are added. Numbers have at most three decimals.
 A host that doesn't know the request (LupedKit before 1.1.1) logs and ignores
 it, so the remote stops waiting after a few seconds and goes on without one.

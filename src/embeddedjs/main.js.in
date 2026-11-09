@@ -54,8 +54,8 @@ const ABSORPTIONS = ["fast", "medium", "slow"];
 const CHORD_MS = 500;
 // ...and then held together this long to send.
 const HOLD_MS = 2000;
-// What the user can ask the phone for (PROTOCOL.md, COMMAND). The phone sends
-// the watch no preset names, so overrides and temp targets can only be ended.
+// What the user can ask the phone for (PROTOCOL.md, COMMAND). Presets lists the
+// phone's overrides and temp targets (PRESETS) to start or end.
 const ACTIONS = [
   { id: "mute", label: "Mute alerts" },
   { id: "carbs", label: "Add carbs" },
@@ -1777,8 +1777,8 @@ class CrimsonBearWatchface {
     }
   }
 
-  // The bolus picker for `grams` of carbs, starting at the recommendation
-  // (rounded down to the step) and stopping at the watch's and the phone's
+  // The bolus picker for `grams` of carbs, starting at exactly the recommendation
+  // (steps counted from it) and stopping at the watch's and the phone's
   // maximum bolus, whichever is lower.
   helperBolusPicker({ grams, absorption }, recommended, phoneMax, note) {
     const step = setting("bolusStep");
@@ -2648,7 +2648,7 @@ class CrimsonBearWatchface {
   // when the event changes while the level is above 0, so it repeats in step
   // with the host and stops when the user acknowledges on the phone. The event
   // is recorded on every message, even while silent (watch alarms off sends
-  // level 0), and the first one after a start is recorded without buzzing.
+  // the level negative), and the first one after a start is recorded without buzzing.
   // Any level gets the full glucose-alarm buzz: without the iOS critical-alert
   // entitlement, urgent alerts arrive at warning level.
   //
