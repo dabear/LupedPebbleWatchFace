@@ -72,6 +72,7 @@
 - `STATE_MACHINES.md` lists the app's state machines (screen cover, Find my Pebble, outbound queue, render scheduler, freshness, host alarm, answer, bolus key, the remote's views), their invariants and transition tables, and the issues found with their fixes. Update it in the same change as any new state, transition or timeout. `scripts/test-luped-states.cjs` (in `npm test`) assembles each variant into a vm and drives those transitions; a regression test there must fail on the code before its fix.
 - Luped Remote: only a `RESULT` for the waiting request's action (`signed`/`forced` stripped) ends `pending`; others still show. The phone resends answers, and a timed-out request can still be answered late, so never end a wait on any answer.
 - Luped Remote: `helperView()` is the screen both `face()` and `helperPress()` use; a view whose object (`pending`, `asking`, `result`, …) is gone is `main`.
+- Luped Remote: a `carbs:` answer belongs to the waiting request only when it is a bolus with carbs (`pending.withCarbs`); otherwise it is an answer for another action. The Up+Down hold neither starts nor sends while `helperCovered()` (a warning or the setup screen covers the confirm screen); `helperPress()` uses the same test.
 - An alarm buzz ends Find my Pebble first: find's back-to-back buzz would make PebbleOS drop the alarm's, and find's end cancels vibration and sound.
 
 ## Rendering invariants

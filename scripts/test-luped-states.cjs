@@ -148,6 +148,47 @@ const data = (host, level, event, glucose = 100) =>
   assert.deepEqual(log, ["double"]);
   receive(face, ["RESULT", "carbs:ok"]);
 
+  // Issue 1 (audit 2026-11-09): a late carbs answer isn't taken by a bolus
+  // without carbs: it shows and buzzes like any other answer; the wait stays.
+  receive(face, ["COMMAND", "auth:v1:0123456789abcdef:" + "00".repeat(32)]);
+  face.confirmation = { action: "bolus", command: "signedbolus:1", lines: ["Bolus"] };
+  face.helperSend();
+  log.length = 0;
+  receive(face, ["RESULT", "carbs:ok"]);
+  assert.equal(
+    face.pending && face.pending.carbs,
+    undefined,
+    "a bolus without carbs took a carbs answer"
+  );
+  assert.equal(face.result, "carbs:ok");
+  assert.deepEqual(log, ["long"], "the late carbs answer didn't buzz");
+  receive(face, ["RESULT", "signedbolus:ok"]);
+  assert.equal(face.pending, null);
+
+  // Issue 2 (audit 2026-11-09): the Up+Down hold doesn't send while a warning
+  // covers the confirm screen, neither started under it nor finishing under it.
+  face.confirmation = { action: "carbs", command: "carbs:10:fast", lines: ["Carbs"] };
+  face.view = "confirm";
+  Object.assign(face, { held: {}, holdTimer: null, chordAt: 0 });
+  face.newProtocol = 2;
+  sent.length = 0;
+  face.helperRaw(1, "up");
+  face.helperRaw(1, "down");
+  assert.equal(face.holdTimer, null, "a hold started under the warning screen");
+  face.helperRaw(0, "up");
+  face.helperRaw(0, "down");
+  face.newProtocol = 0;
+  face.helperRaw(1, "up");
+  face.helperRaw(1, "down");
+  assert.ok(face.holdTimer, "the hold didn't start on the confirm screen");
+  face.newProtocol = 2;
+  face.holdStart = Date.now() - 5000;
+  face.helperHoldStep();
+  assert.equal(face.pending, null, "the hold sent under the warning screen");
+  assert.equal(sent.length, 0);
+  face.newProtocol = 0;
+  Object.assign(face, { held: {}, holdTimer: null, chordAt: 0 });
+
   // Issue 2: once the answer's minute is up the result view shows the main
   // screen, and the buttons act on the main screen.
   face.view = "result";

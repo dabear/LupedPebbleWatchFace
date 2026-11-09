@@ -1442,7 +1442,7 @@ class CrimsonBearWatchface {
       return;
     }
     this.held[button] = now;
-    if (this.findUntil) return;
+    if (this.findUntil || this.helperCovered()) return;
     const times = ["up", "down"].map((name) => this.held[name]);
     if (this.view !== "confirm" || times.some((time) => time == null || now - time > CHORD_MS)) return;
     this.chordAt = now;
@@ -1454,16 +1454,24 @@ class CrimsonBearWatchface {
 
   // While both are held: fill the bar, and send once HOLD_MS is reached.
   helperHoldStep() {
-    if (Date.now() - this.holdStart >= HOLD_MS) this.helperHoldEnd(true);
+    // A warning or setup screen came up while the buttons were held: no send.
+    if (this.helperCovered()) this.helperHoldEnd(false);
+    else if (Date.now() - this.holdStart >= HOLD_MS) this.helperHoldEnd(true);
     else this.helperDrawHold();
+  }
+
+  // A warning (newer protocol, another app) or the setup screen covers the
+  // remote's own screens; the buttons act as on the main screen then.
+  helperCovered() {
+    return Boolean(this.hostChange || this.newProtocol || !this.state.configured);
   }
 
   helperHoldEnd(send) {
     clearInterval(this.holdTimer);
     this.holdTimer = null;
     this.holdStart = 0;
-    if (!send || this.view !== "confirm") {
-      if (this.view === "confirm") this.helperDrawHold();
+    if (!send || this.view !== "confirm" || this.helperCovered()) {
+      if (this.view === "confirm" && !this.helperCovered()) this.helperDrawHold();
       return;
     }
     this.helperSend();
@@ -1520,7 +1528,7 @@ class CrimsonBearWatchface {
     const move = button === "up" ? 1 : button === "down" ? -1 : 0;
     const select = button === "select";
     const back = button === "back";
-    const covered = this.hostChange || this.newProtocol || !this.state.configured;
+    const covered = this.helperCovered();
     if (!covered) this.view = this.helperView();
     const view = covered ? "main" : this.view;
     if (view === "main") {
@@ -1818,7 +1826,9 @@ class CrimsonBearWatchface {
     Vibes.shortPulse();
     this.result = null;
     this.view = "sending";
-    this.pending = { action, lines, until: Date.now() + RESULT_TIMEOUT_MS };
+    // A bolus with carbs ("signedbolus:<units>:<grams>…") is answered carbs first.
+    const withCarbs = action === "bolus" && command.split(":").length > 2;
+    this.pending = { action, lines, withCarbs, until: Date.now() + RESULT_TIMEOUT_MS };
     if (!this.wheelTimer) this.wheelTimer = setInterval(() => this.helperSpin(), 100);
     if (action === "bolus") this.requestSignedBolus(command);
     else {
@@ -2861,7 +2871,7 @@ class CrimsonBearWatchface {
         // A bolus with carbs is answered twice, carbs first: that answer doesn't
         // end the wait (so nothing reads as done before the bolus is), and the
         // wait starts again for the bolus, which comes after a new bolus context.
-        if (this.pending && this.pending.action === "bolus" && value.startsWith("carbs:")) {
+        if (this.pending && this.pending.withCarbs && value.startsWith("carbs:")) {
           this.pending.carbs = value.split(":")[1];
           this.pending.until = Date.now() + RESULT_TIMEOUT_MS;
           needsFullDraw = true;

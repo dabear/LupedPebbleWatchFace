@@ -225,15 +225,25 @@ Ending the wait lifts the one-request-at-a-time guard, so a second bolus can be 
 
 **Fix:** an alarm ends the search first (cancelling its buzz and sound), then buzzes and sounds.
 
+### Issue 5: Luped Remote: a late carbs answer was taken by a bolus without carbs (fixed in 0.1.11)
+
+**Evidence:** the 2026-11-09 audit. The first `RESULT` branch took any `carbs:` answer while a bolus waited, also for a bolus without carbs. A late `carbs:ok` from a timed-out carbs request then showed "Carbs added, bolus next", didn't buzz, and extended the wait by 30 s. Issue 1's test used only a bolus with carbs.
+
+**Fix:** `pending.withCarbs` records whether the bolus has carbs; only then does a `carbs:` answer belong to it. Otherwise it is an answer for another action (Issue 1).
+
+### Issue 6: Luped Remote: the hold sent under a cover screen (fixed in 0.1.11)
+
+**Evidence:** the 2026-11-09 audit. `helperRaw` and `helperHoldEnd` checked only `this.view`, so with a warning (newer protocol, another app) or the setup screen over the confirm screen, holding Up+Down for 2 s still sent the request, and the hold bar was painted over the cover.
+
+**Fix:** `helperCovered()`, the same test `helperPress` uses: a hold doesn't start under a cover screen, and one that is covered while held ends without sending.
+
 ### Not fixed, with reasons
 
-| Finding                                                                                                                                                                                                                       | Why it stays                                                                                               |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| ±event re-buzz after a Loop restart (§6)                                                                                                                                                                                      | Deferred by the user on 2026-11-05                                                                         |
-| Backing out of asking/presetAsking leaves `recommend:`/`presets` in the slot; it is sent later                                                                                                                                | Harmless: neither changes anything on the phone, and a late answer is ignored (no `asking`/`presetAsking`) |
-| A chord held as Find my Pebble starts still sends after 2 s                                                                                                                                                                   | The user deliberately held it; the send's screen shows once the search ends                                |
-| An answer or timeout moves the remote from Settings to the result screen, dropping an unsaved edit                                                                                                                            | Unsaved by definition; the answer matters more                                                             |
-| If `new Message()` throws while reopening, `message` stays the closed one, and the next failure calls `close()` on it again                                                                                                   | Not observed; whether a second `close()` throws in Alloy is unverified                                     |
-| `result` clears on the first minute tick after 60 s (up to 2 min)                                                                                                                                                             | Within design ("for a minute")                                                                             |
-| Open since the 2026-11-09 audit: a late `carbs:` answer is taken by a waiting bolus **without** carbs (the first branch in `RESULT` doesn't check that the bolus had carbs), contradicting the `pending` rows above           | To fix: record the carbs on `pending` and take a `carbs:` answer only for a bolus with carbs               |
-| Open since the 2026-11-09 audit: the Up+Down hold still sends while a warning or setup screen covers the confirm screen (`helperRaw` and `helperHoldEnd` check `this.view`, not the cover), contradicting the invariant above | To fix: check the effective screen in both                                                                 |
+| Finding                                                                                                                     | Why it stays                                                                                               |
+| --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| ±event re-buzz after a Loop restart (§6)                                                                                    | Deferred by the user on 2026-11-05                                                                         |
+| Backing out of asking/presetAsking leaves `recommend:`/`presets` in the slot; it is sent later                              | Harmless: neither changes anything on the phone, and a late answer is ignored (no `asking`/`presetAsking`) |
+| A chord held as Find my Pebble starts still sends after 2 s                                                                 | The user deliberately held it; the send's screen shows once the search ends                                |
+| An answer or timeout moves the remote from Settings to the result screen, dropping an unsaved edit                          | Unsaved by definition; the answer matters more                                                             |
+| If `new Message()` throws while reopening, `message` stays the closed one, and the next failure calls `close()` on it again | Not observed; whether a second `close()` throws in Alloy is unverified                                     |
+| `result` clears on the first minute tick after 60 s (up to 2 min)                                                           | Within design ("for a minute")                                                                             |

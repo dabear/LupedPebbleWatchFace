@@ -101,7 +101,8 @@ while the user has turned watch alarms off. Index 9 is
 an alert event the host advances every time it fires an alert, including each
 repeat of an alert that is still active, whether or not watch alarms are on.
 The host persists it so a restart can't reuse the value the watch last saw; it
-wraps at 1000. The watch buzzes with the glucose-alarm pattern when the event
+runs from 1 to 999 and wraps back to 1 (`0` only before the first alert, as a
+sounded event must be negative). The watch buzzes with the glucose-alarm pattern when the event
 differs from the last one it saw and index 8 is above `0` (the same pattern
 for every alert). It records the event on every `DATA`, even when it doesn't buzz, and
 records the first event after the watchface starts without buzzing. So the
