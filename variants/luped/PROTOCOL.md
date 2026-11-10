@@ -155,13 +155,15 @@ name ignoring case) or `override:cancel` (end the running one),
 on hosts that have them), or a signed bolus (below). A request naming no preset, or one the host doesn't have, is answered
 `failed` or `refused`. Each request ends with `@<confirmedAt>`, when the user
 confirmed it, in whole seconds since 1970 by the watch's clock (for example
-`carbs:30@1798000000`). A resent request keeps the same value. The host refuses
-requests without it, and requests confirmed more than 30 seconds ago or more
-than 5 seconds in the future, so the watch's clock must be within a few seconds
-of the phone's (the Pebble app keeps it in step). The host runs its own checks
-and acts only if its plugin declares the capability and its user allowed it; a
-request without a valid amount is answered `failed`. The host answers each
-request on `RESULT`, kept short as `<action>:<outcome>` (for example `mute:ok`,
+`carbs:30@1798000000`). A resent request keeps the same value. The phone's
+plugin refuses requests without it, and requests confirmed more than 30 seconds
+ago or more than 5 seconds in the future, so the watch's clock must be within a
+few seconds of the phone's (the Pebble app keeps it in step). The plugin acts
+only if its user allowed that request in the plugin's settings (Luped Remote
+on, and the switch for the action), and runs its own checks (how often, how
+much); the host app then applies its own limits, such as the maximum bolus. A
+request without a valid amount is answered `failed`. Each request is answered
+on `RESULT`, kept short as `<action>:<outcome>` (for example `mute:ok`,
 `signedbolus:refused`, `carbs:ok`); outcomes are `ok`, `refused`, `ignored` (the
 plugin doesn't offer it) and `failed`. An answer that isn't `ok` may add the
 reason as a third field, `<action>:<outcome>:<reason>` (for example
