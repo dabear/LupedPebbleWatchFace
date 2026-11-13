@@ -732,15 +732,17 @@ class CrimsonBearWatchface {
   }
 
   graphPoint(value, index, count, bounds, minimum, maximum) {
+    // The domain is capped at the sensor range, the readings are not: keep every
+    // point inside the panel, or a reading above it paints over the ring and strip.
+    const y =
+      bounds.y +
+      bounds.height -
+      ((value - minimum) / Math.max(1, maximum - minimum)) * bounds.height;
     return {
       x: Math.round(
         bounds.x + (count < 2 ? bounds.width : (index * bounds.width) / (count - 1))
       ),
-      y: Math.round(
-        bounds.y +
-          bounds.height -
-          ((value - minimum) / Math.max(1, maximum - minimum)) * bounds.height
-      ),
+      y: Math.round(Math.min(bounds.y + bounds.height, Math.max(bounds.y, y))),
     };
   }
 
@@ -2112,6 +2114,7 @@ class CrimsonBearWatchface {
       this.drawLoopRing(width - 42, 10, this.colors.pale, this.colors.ink);
     }
     this.statusY = statusY;
+    this.statusRing = { cx, cy, radius };
     this.loopFresh = this.loopFreshness();
 
     this.graph(0, graphY, width, height - graphY - footerHeight);
@@ -2339,6 +2342,10 @@ class CrimsonBearWatchface {
           this.render.begin(0, this.statusY, width, 17);
           began = true;
           this.drawCgmStatus(0, this.statusY, width, 17);
+          // The strip reaches 11 px into the glucose ring, which face() draws over
+          // it: draw the ring again here (clipped to the strip) or its bottom stays inked out.
+          const ring = this.statusRing;
+          if (ring) this.drawVariantRing(ring.cx, ring.cy, ring.radius, this.state.closedLoop === 0);
           began = false;
           this.render.end();
           invalidatedPixels += width * 17;
@@ -2392,7 +2399,14 @@ class CrimsonBearWatchface {
   }
 
   updateBattery() {
-    const sample = this.battery.sample();
+    // Battery data is optional: a sensor that failed to start (startBatteryService)
+    // or throws on a sample must not take the minute tick down with it.
+    let sample;
+    try {
+      sample = this.battery.sample();
+    } catch (_) {
+      return false;
+    }
     if (!sample || sample.percent == null || sample.percent === this.state.battery)
       return false;
     this.state.battery = sample.percent;

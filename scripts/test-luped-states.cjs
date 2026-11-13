@@ -240,4 +240,108 @@ const data = (host, level, event, glucose = 100) =>
   face.findStep();
   assert.deepEqual(log, ["cancel", "quiet", "buzz", "alarm beep"]);
 }
+
+// Emulator-reproduced (2026-11-13), each checked on gabbro before the fix.
+{
+  const context = load("luped");
+
+  // The battery sensor is optional: a failed start or a throwing sample() must
+  // not take the minute tick down (it ended in "Alloy: Fatal Error").
+  for (const battery of [
+    undefined,
+    {
+      sample: () => {
+        throw new Error("no sensor");
+      },
+    },
+  ]) {
+    const face = newFace(context);
+    const renders = [];
+    Object.assign(face, {
+      battery,
+      lastBatterySampleAt: 0,
+      lastMinuteEventAt: 0,
+      lastTelemetrySentAt: Date.now(),
+      startupId: 1,
+      requestRender: (priority) => renders.push(priority),
+    });
+    face.state.updated = Date.now();
+    face.diagnostics = face.newDiagnostics();
+    assert.doesNotThrow(
+      () => face.drawMinute({ date: new Date() }),
+      "a missing or throwing battery sensor broke the minute tick"
+    );
+    assert.equal(renders.length, 1, "the minute render wasn't requested");
+  }
+
+  // The graph keeps every point inside its panel, also for readings beyond the
+  // 40-400 mg/dL (2.2-22.2 mmol/L) domain.
+  {
+    const face = newFace(context);
+    const bounds = { x: 8, y: 131, width: 244, height: 80 };
+    for (const [value, minimum, maximum] of [
+      [450, 40, 400],
+      [28, 2.2, 22.2],
+      [20, 40, 400],
+      [5, 2.2, 22.2],
+    ]) {
+      const { y } = face.graphPoint(value, 3, 12, bounds, minimum, maximum);
+      assert.ok(
+        y >= bounds.y && y <= bounds.y + bounds.height,
+        `${value} plotted at y=${y}, outside ${bounds.y}-${bounds.y + bounds.height}`
+      );
+    }
+  }
+
+  // Round screens: the minute repaint of the status strip redraws the glucose
+  // ring over it, as face() draws them (the strip reaches 11 px into the ring).
+  {
+    const round = load("luped");
+    round.screen.round = true;
+    const face = newFace(round);
+    const calls = [];
+    Object.assign(face, {
+      render: {
+        width: 260,
+        height: 260,
+        begin: (...region) => calls.push(`begin ${region.join(",")}`),
+        end: () => calls.push("end"),
+        fillRectangle() {},
+        getTextWidth: () => 40,
+      },
+      fonts: { footer: {}, label: {} },
+      colors: { ink: 0, white: 0, crimson: 0 },
+      recoverRender: (error) => {
+        throw error;
+      },
+      footerState: {
+        clock: null,
+        date: null,
+        battery: null,
+        batteryWidth: 0,
+        clockWidth: 0,
+        connected: true,
+      },
+      statusY: 114,
+      statusRing: { cx: 125, cy: 70, radius: 58 },
+      loopFresh: 0,
+      loopFreshness: () => 0,
+      text() {},
+      drawBluetoothDisconnectedIndicator() {},
+      drawCgmStatus: () => calls.push("strip"),
+      drawVariantRing: () => calls.push("ring"),
+    });
+    face.state.fullScreen = false;
+    face.diagnostics = face.newDiagnostics();
+    face.drawMinuteNow(new Date());
+    const strip = calls.indexOf("strip");
+    assert.ok(strip >= 0, "the strip wasn't repainted");
+    assert.equal(calls[strip + 1], "ring", "the ring wasn't redrawn over the strip");
+    assert.equal(
+      calls[strip + 2],
+      "end",
+      "the ring was drawn outside the strip's transaction"
+    );
+  }
+}
 console.log("Luped state machine regressions passed");
