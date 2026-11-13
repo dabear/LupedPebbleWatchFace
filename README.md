@@ -15,6 +15,10 @@ Alloy embedded JavaScript runtime.
     <td><img src="assets/emery_luped_graph_screenshot.png" alt="Luped CGM graph mode on Pebble Time 2" width="200"></td>
     <td><img src="assets/emery_luped_fullscreen_screenshot.png" alt="Luped CGM full-screen mode on Pebble Time 2" width="200"></td>
   </tr>
+  <tr>
+    <td><img src="assets/gabbro_luped_graph_screenshot.png" alt="Luped CGM graph mode on Pebble Round 2" width="200"></td>
+    <td><img src="assets/gabbro_luped_fullscreen_screenshot.png" alt="Luped CGM full-screen mode on Pebble Round 2" width="200"></td>
+  </tr>
 </table>
 
 Luped needs a direct watch connection from a supported iPhone app such as Loop

@@ -738,12 +738,22 @@ class CrimsonBearWatchface {
       bounds.y +
       bounds.height -
       ((value - minimum) / Math.max(1, maximum - minimum)) * bounds.height;
-    return {
+    const point = {
       x: Math.round(
         bounds.x + (count < 2 ? bounds.width : (index * bounds.width) / (count - 1))
       ),
       y: Math.round(Math.min(bounds.y + bounds.height, Math.max(bounds.y, y))),
     };
+    if (screen.round) {
+      // The display is a circle: at the panel's lower rows it is much narrower
+      // than the panel, so the latest reading (the point that matters) could fall
+      // outside it. Keep each point, with its dot, inside the circle.
+      const radius = this.render.width >> 1;
+      const dy = point.y - (this.render.height >> 1);
+      const half = Math.max(0, Math.floor(Math.sqrt(Math.max(0, radius * radius - dy * dy))) - 8);
+      point.x = Math.max(radius - half, Math.min(radius + half, point.x));
+    }
+    return point;
   }
 
   graph(x, y, width, height) {
@@ -768,8 +778,23 @@ class CrimsonBearWatchface {
       height: height - 14,
     };
     const { minimum, maximum } = this.graphDomain();
+    // Round screens: narrow the plot so the oldest and the latest point (at their
+    // own heights) fit inside the circle, keeping the spacing even; graphPoint's
+    // own clamp alone pulled the oldest point onto its neighbour.
+    let plot = bounds;
+    if (screen.round && values.length > 1) {
+      const radius = this.render.width >> 1;
+      const centre = this.render.height >> 1;
+      const half = (value) => {
+        const dy = this.graphPoint(value, 0, 1, bounds, minimum, maximum).y - centre;
+        return Math.max(0, Math.floor(Math.sqrt(Math.max(0, radius * radius - dy * dy))) - 8);
+      };
+      const left = Math.max(bounds.x, radius - half(values[0]));
+      const right = Math.min(bounds.x + bounds.width, radius + half(values[values.length - 1]));
+      plot = { x: left, y: bounds.y, width: Math.max(1, right - left), height: bounds.height };
+    }
     const points = values.map((value, index) =>
-      this.graphPoint(value, index, values.length, bounds, minimum, maximum)
+      this.graphPoint(value, index, values.length, plot, minimum, maximum)
     );
     for (let index = 1; index < points.length; index += 1) {
       this.render.drawLine(
@@ -2013,10 +2038,98 @@ class CrimsonBearWatchface {
 
   // Complete watchface layouts
 
+  // Round Large Glucose: the ring is flush with the display's edge (drawVariantRing
+  // draws its outer edge 3 px inside the radius it is given). The reading, trend,
+  // delta and reading time sit in its upper part; its bottom is black, as the
+  // footer row was, with the clock, date, battery and connection. (The display's
+  // corners would hide a footer row.) drawMinuteNow repaints the same places.
+  roundFullScreenFace(width, height, now) {
+    const cx = width >> 1;
+    const cy = height >> 1;
+    this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
+    this.drawVariantRing(cx, cy, cx + 3);
+    this.drawGlucose(cx, cy - 70, this.fonts.fullGlucose);
+    this.text(this.deltaText(), this.fonts.delta, this.stale ? this.colors.low : this.colors.ink, cx, cy - 18, true);
+    // A request's answer takes the reading time's place for its minute (red when not done).
+    const answer = this.result && this.resultText();
+    this.text(
+      answer ? `${answer[0]}: ${answer[1]}` : this.readingTime(),
+      this.fonts.status,
+      this.stale || (answer && !answer[2]) ? this.colors.low : this.colors.ink,
+      cx,
+      cy + 10,
+      true
+    );
+    if (!this.stale)
+      this.arrow(cx + 78, cy - 36, this.state.direction, this.colors.crimson, @FULL_ARROW_SCALE@ * 0.75);
+    // The black bottom, row by row up to the ring's band (radius 120 to 130).
+    const inner = cx - 10;
+    for (let y = cy + 46; y < cy + inner; y++) {
+      const half = Math.floor(Math.sqrt(inner * inner - (y - cy) * (y - cy)));
+      this.render.fillRectangle(this.colors.ink, cx - half, y, 2 * half, 1);
+    }
+    const clock = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const dateText = `${DAYS[now.getDay()]} ${now.getDate()}`;
+    const battery = `${this.state.battery}%`;
+    this.roundBottomClock(cx, cy, clock);
+    this.roundBottomDate(cx, cy, dateText);
+    this.roundBottomBattery(cx, cy, battery);
+    this.roundBottomConnection(cx, cy);
+    this.footerState = {
+      clock,
+      date: dateText,
+      battery,
+      batteryWidth: 0,
+      clockWidth: 0,
+      connected: this.isConnected,
+    };
+  }
+
+  // The ring's black bottom, kept as low as the narrowing circle allows: the clock
+  // (offline indicator after it, at a fixed place so a narrower clock leaves
+  // nothing behind), then the date and battery either side of the centre.
+  roundBottomClock(cx, cy, clock) {
+    this.text(clock, this.fonts.footer, this.colors.white, cx, cy + 48, true);
+  }
+
+  roundBottomConnection(cx, cy) {
+    this.drawBluetoothDisconnectedIndicator(cx + 54, cy + 54);
+  }
+
+  // Round graph mode: the footer's date and battery corners are outside the
+  // display, so the date and battery sit in the white space left of the glucose
+  // ring, each clearing its own box (content renders don't repaint the background).
+  roundGraphDate(cx, cy, radius, dateText) {
+    this.render.fillRectangle(this.colors.pale, cx - radius - 44, cy - 20, 44, 17);
+    const width = this.render.getTextWidth(dateText, this.fonts.status);
+    this.text(dateText, this.fonts.status, this.colors.ink, cx - radius - 1 - width, cy - 20);
+  }
+
+  roundGraphBattery(cx, cy, radius, battery) {
+    this.render.fillRectangle(this.colors.pale, cx - radius - 44, cy - 2, 44, 17);
+    const width = this.render.getTextWidth(battery, this.fonts.status);
+    this.text(battery, this.fonts.status, this.colors.ink, cx - radius - 1 - width, cy - 2);
+  }
+
+  roundBottomDate(cx, cy, dateText) {
+    const left = cx - 4 - this.render.getTextWidth(dateText, this.fonts.label);
+    this.text(dateText, this.fonts.label, this.colors.pale, left, cy + 78);
+  }
+
+  roundBottomBattery(cx, cy, battery) {
+    this.text(battery, this.fonts.label, this.colors.pale, cx + 4, cy + 78);
+  }
+
   fullScreenFace(width, height, footerHeight, now, drawFooter, preserveStatic) {
+    if (screen.round) {
+      this.roundFullScreenFace(width, height, now);
+      return;
+    }
     const contentHeight = height - footerHeight;
     const cx = width >> 1;
-    const radius = (width >> 1) - 9;
+    // Round: 115 is the largest ring that is a whole circle inside the display and
+    // still meets the footer (a larger one has its top arc cut off).
+    const radius = (width >> 1) - (screen.round ? 15 : 9);
     const cy = contentHeight - radius;
     if (!preserveStatic) this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
     this.drawVariantRing(cx, cy, radius);
@@ -2099,7 +2212,9 @@ class CrimsonBearWatchface {
     // The arrow sits outside the ring's redrawn circle, so nothing else
     // repaints this spot on a content-only render; clear it every time or a
     // direction change leaves the old glyph's strokes mixed with the new one.
-    const arrowCx = width - 21;
+    // On round screens the display edge at the ring's height is 15 px nearer than
+    // the rectangle's: the arrow (up to 18 px either side) would be cut off there.
+    const arrowCx = screen.round ? width - 51 : width - 21;
     const arrowClearRadius = 20;
     this.render.fillRectangle(
       this.colors.pale,
@@ -2112,6 +2227,10 @@ class CrimsonBearWatchface {
     if (!screen.round) {
       this.render.fillRectangle(this.colors.pale, width - 45, 4, 45, 24);
       this.drawLoopRing(width - 42, 10, this.colors.pale, this.colors.ink);
+    }
+    if (screen.round) {
+      this.roundGraphDate(cx, cy, radius, `${DAYS[now.getDay()]} ${now.getDate()}`);
+      this.roundGraphBattery(cx, cy, radius, `${this.state.battery}%`);
     }
     this.statusY = statusY;
     this.statusRing = { cx, cy, radius };
@@ -2182,6 +2301,9 @@ class CrimsonBearWatchface {
     // @if helper
     // The remote shows one whole screen at a time and repaints all of it.
     contentOnly = false;
+    // @else
+    // Round Large Glucose has no footer row: its clock, date and battery are inside the ring.
+    if (screen.round && this.state.fullScreen) contentOnly = false;
     // @endif
     const invalidatedPixels =
       this.render.width * (contentOnly ? this.render.height - 30 : this.render.height);
@@ -2286,6 +2408,7 @@ class CrimsonBearWatchface {
     ).padStart(2, "0")}`;
     const dateText = `${DAYS[date.getDay()]} ${date.getDate()}`;
     const battery = `${this.state.battery}%`;
+    const roundFull = screen.round && this.state.fullScreen;
     const checkMinute = Boolean(minuteDate);
     const clockChanged = checkMinute && clock !== this.footerState.clock;
     const dateChanged = checkMinute && dateText !== this.footerState.date;
@@ -2294,20 +2417,48 @@ class CrimsonBearWatchface {
     let invalidatedPixels = 0;
     let began = false;
     try {
-      const redraw = (x, regionWidth, draw) => {
-        this.render.begin(x, footerY, regionWidth, footerHeight);
+      const redraw = (
+        x,
+        regionWidth,
+        draw,
+        y = footerY,
+        regionHeight = footerHeight,
+        background = this.colors.ink
+      ) => {
+        this.render.begin(x, y, regionWidth, regionHeight);
         began = true;
-        this.render.fillRectangle(this.colors.ink, x, footerY, regionWidth, footerHeight);
+        this.render.fillRectangle(background, x, y, regionWidth, regionHeight);
         draw();
         began = false;
         this.render.end();
-        invalidatedPixels += regionWidth * footerHeight;
+        invalidatedPixels += regionWidth * regionHeight;
       };
-      if (dateChanged)
+      if (roundFull) {
+        // The clock, date and battery sit in the ring's black bottom
+        // (roundFullScreenFace): repaint just their patches, clear of the ring.
+        const cx = width >> 1;
+        const cy = this.render.height >> 1;
+        const ink = this.colors.ink;
+        // Each patch starts inside the black bottom (cy + 46), below its padding.
+        if (clockChanged) redraw(cx - 52, 104, () => this.roundBottomClock(cx, cy, clock), cy + 50, 30, ink);
+        if (connectionChanged) redraw(cx + 52, 24, () => this.roundBottomConnection(cx, cy), cy + 50, 24, ink);
+        if (dateChanged) redraw(cx - 62, 58, () => this.roundBottomDate(cx, cy, dateText), cy + 78, 22, ink);
+        if (batteryChanged) redraw(cx + 4, 58, () => this.roundBottomBattery(cx, cy, battery), cy + 78, 22, ink);
+      }
+      const graphRing = screen.round && !this.state.fullScreen && this.statusRing;
+      if (graphRing) {
+        const { cx: rcx, cy: rcy, radius: rr } = graphRing;
+        const pale = this.colors.pale;
+        if (dateChanged)
+          redraw(rcx - rr - 44, 44, () => this.roundGraphDate(rcx, rcy, rr, dateText), rcy - 20, 17, pale);
+        if (batteryChanged)
+          redraw(rcx - rr - 44, 44, () => this.roundGraphBattery(rcx, rcy, rr, battery), rcy - 2, 17, pale);
+      }
+      if (dateChanged && !roundFull && !graphRing)
         redraw(0, 58, () =>
           this.text(dateText, this.fonts.label, this.colors.white, 5, footerY + 5)
         );
-      if (clockChanged) {
+      if (clockChanged && !roundFull) {
         const clockWidth = this.render.getTextWidth(clock, this.fonts.footer);
         // Clear the wider of the old and new clock so a narrower new value can
         // never leave the previous glyph's outer edges behind.
@@ -2318,7 +2469,7 @@ class CrimsonBearWatchface {
         );
         this.footerState.clockWidth = clockWidth;
       }
-      if (batteryChanged) {
+      if (batteryChanged && !roundFull && !graphRing) {
         const batteryWidth = this.render.getTextWidth(battery, this.fonts.label);
         const clearWidth = Math.max(batteryWidth, this.footerState.batteryWidth) + 2;
         const batteryLeft = width - 5 - batteryWidth;
@@ -2327,7 +2478,7 @@ class CrimsonBearWatchface {
         );
         this.footerState.batteryWidth = batteryWidth;
       }
-      if (connectionChanged) {
+      if (connectionChanged && !roundFull) {
         const clockWidth = this.render.getTextWidth(clock, this.fonts.footer);
         const indicatorX = Math.round((width + clockWidth) / 2) + 4;
         redraw(indicatorX, 18, () =>

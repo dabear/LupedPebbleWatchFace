@@ -344,4 +344,290 @@ const data = (host, level, event, glucose = 100) =>
     );
   }
 }
+
+// Round-screen visibility (emulator audit, 2026-11-13): nothing the user needs to
+// read may be drawn where the round display hides it.
+{
+  const round = load("luped");
+  round.screen.round = true;
+  const insideDisplay = (x, y, margin) => Math.hypot(x - 130, y - 130) <= 130 - margin;
+  const stubRender = () =>
+    new Proxy(
+      { width: 260, height: 260 },
+      { get: (target, key) => (key in target ? target[key] : () => 0) }
+    );
+  const stubFace = () => {
+    const face = newFace(round);
+    Object.assign(face, {
+      render: stubRender(),
+      fonts: new Proxy({}, { get: () => ({}) }),
+      colors: new Proxy({}, { get: () => 0 }),
+      stale: false,
+      statusLine: null,
+      drawVariantRing() {},
+      drawCgmStatus() {},
+      footer() {},
+    });
+    Object.assign(face.state, {
+      glucose: 142,
+      delta: -3,
+      direction: "SingleDown",
+      units: "mg/dL",
+      fullScreen: false,
+      readings: [150, 148, 147, 146, 145, 144, 143, 143, 142, 142, 142, 142],
+      updated: Date.now(),
+    });
+    return face;
+  };
+
+  // The trend arrow (up to 18 px from its centre) stays inside the display.
+  for (const direction of ["DoubleDown", "FortyFiveDown", "Flat"]) {
+    const face = stubFace();
+    face.state.direction = direction;
+    const arrows = [];
+    face.arrow = (cx, cy) => arrows.push([cx, cy]);
+    face.face(false, false);
+    assert.equal(arrows.length, 1);
+    const [cx, cy] = arrows[0];
+    for (const [dx, dy] of [
+      [18, 0],
+      [13, 13],
+      [13, -13],
+      [0, 16],
+    ]) {
+      assert.ok(
+        insideDisplay(cx + dx, cy + dy, 2),
+        `${direction} arrow at ${cx},${cy} is cut off by the bezel`
+      );
+    }
+  }
+
+  // Round graph mode: the footer's corners are outside the display, so the date
+  // and battery sit left of the glucose ring, inside the display, and the minute
+  // redraw repaints them there.
+  {
+    const face = stubFace();
+    face.state.battery = 85;
+    face.render.getTextWidth = (text) => String(text).length * 6;
+    const texts = [];
+    face.text = (value, font, color, x, y, centered) =>
+      texts.push({ value: String(value), x, y, centered });
+    face.face(false, false);
+    const ringLeft = face.statusRing.cx - face.statusRing.radius + 3;
+    for (const wanted of [/^[A-Z][a-z]{2} \d{1,2}$/, /^85%$/]) {
+      const t = texts.find((item) => wanted.test(item.value));
+      assert.ok(t, `${wanted} is not drawn in round graph mode`);
+      const width = t.value.length * 6;
+      const left = t.centered ? t.x - width / 2 : t.x;
+      for (const [x, y] of [
+        [left, t.y + 3],
+        [left, t.y + 16],
+        [left + width, t.y + 3],
+        [left + width, t.y + 16],
+      ]) {
+        assert.ok(
+          insideDisplay(x, y, 2),
+          `"${t.value}" reaches ${x},${y}, outside the display`
+        );
+        assert.ok(x < ringLeft, `"${t.value}" reaches the glucose ring at ${x},${y}`);
+      }
+    }
+    const regions = [];
+    texts.length = 0;
+    Object.assign(face, {
+      render: {
+        width: 260,
+        height: 260,
+        begin: (x, y, w, h) => regions.push([x, y, w, h]),
+        end() {},
+        fillRectangle() {},
+        getTextWidth: (text) => String(text).length * 6,
+      },
+      footerState: {
+        clock: "10:00",
+        date: "Fri 13",
+        battery: "80%",
+        batteryWidth: 0,
+        clockWidth: 0,
+        connected: true,
+      },
+      loopFresh: 0,
+      loopFreshness: () => 0,
+      recoverRender: (error) => {
+        throw error;
+      },
+    });
+    face.diagnostics = face.newDiagnostics();
+    face.drawMinuteNow(new Date(2026, 10, 14, 11, 7));
+    assert.ok(
+      texts.some((t) => t.value === "Sat 14"),
+      "the date wasn't repainted"
+    );
+    assert.ok(
+      texts.some((t) => t.value === "85%"),
+      "the battery wasn't repainted"
+    );
+    const top = regions.filter(([, y]) => y < 100);
+    assert.ok(
+      top.length >= 2,
+      "the date and battery weren't repainted beside the ring"
+    );
+    for (const [x, y, w, h] of top)
+      assert.ok(x + w <= ringLeft, `region ${x},${y},${w},${h} reaches the ring`);
+  }
+
+  // The round graph keeps its points evenly spaced: clamping each point on its
+  // own pulled the oldest one onto its neighbour.
+  for (const readings of [
+    [5.4, 5.5, 5.7, 5.8, 6, 6.1, 6.2, 6.3, 6.5, 6.6, 6.7, 6.8],
+    [5.4, 5.1, 4.8, 4.5, 4.2, 4, 3.8, 3.6, 3.5, 3.3, 3.2, 3.1],
+  ]) {
+    const face = stubFace();
+    Object.assign(face.state, { units: "mmol/L", readings });
+    const dots = [];
+    face.render = new Proxy(
+      {
+        width: 260,
+        height: 260,
+        drawCircle: (color, x, y, r) => (r === 2 || r === 4 ? dots.push([x, y]) : 0),
+      },
+      { get: (target, key) => (key in target ? target[key] : () => 0) }
+    );
+    face.graph(0, 131, 260, 99);
+    // Each point is two circles (outline, then fill): one per point.
+    const points = dots.filter((_, i) => i % 2 === 1);
+    const xs = points.map(([x]) => x);
+    const gaps = xs.slice(1).map((x, i) => x - xs[i]);
+    assert.ok(
+      Math.max(...gaps) - Math.min(...gaps) <= 1,
+      `uneven round graph spacing: ${gaps.join(", ")}`
+    );
+    for (const [x, y] of dots)
+      assert.ok(insideDisplay(x, y, 6), `dot at ${x},${y} is hidden by the bezel`);
+  }
+
+  // Every graph point, and its 6 px dot, stays inside the display.
+  {
+    const face = stubFace();
+    const bounds = { x: 8, y: 138, width: 244, height: 85 };
+    for (const y of [138, 160, 190, 223]) {
+      const value = 400 - ((y - bounds.y) / bounds.height) * 360;
+      for (const index of [0, 11]) {
+        const point = face.graphPoint(value, index, 12, bounds, 40, 400);
+        assert.ok(
+          insideDisplay(point.x, point.y, 6),
+          `point ${index} at ${point.x},${point.y} is hidden by the bezel`
+        );
+      }
+    }
+  }
+
+  // Round Large Glucose: the ring is flush with the display's edge, and the reading,
+  // time, clock, date and battery are all inside it (no footer row).
+  {
+    const face = stubFace();
+    Object.assign(face.state, { fullScreen: true, battery: 85 });
+    face.render.getTextWidth = (text) => String(text).length * 8;
+    const rings = [];
+    const texts = [];
+    face.drawVariantRing = (cx, cy, radius) => rings.push([cx, cy, radius]);
+    face.text = (value, font, color, x, y, centered) =>
+      texts.push({ value: String(value), x, y, centered });
+    face.footer = () => assert.fail("round full-screen drew the footer row");
+    face.face(true, false);
+    const [cx, cy, radius] = rings[0];
+    assert.equal(cx, 130);
+    assert.equal(cy, 130);
+    assert.ok(
+      radius - 3 >= 128 && radius - 3 <= 130,
+      `ring outer edge r=${radius - 3} is not flush with the display (130)`
+    );
+    // The inside of the ring: its outer radius minus the 10 px band and its 2 px edge.
+    const inner = radius - 3 - 12;
+    const isClock = (value) => /^\d\d:\d\d$/.test(value);
+    const strings = texts.map((t) => t.value);
+    assert.ok(strings.some(isClock), "the clock is missing");
+    assert.ok(
+      strings.some((v) => /^[A-Z][a-z]{2} \d{1,2}$/.test(v)),
+      "the date is missing"
+    );
+    assert.ok(strings.includes("85%"), "the battery is missing");
+    for (const t of texts) {
+      const textWidth = t.value.length * 8;
+      const left = t.centered ? t.x - textWidth / 2 : t.x;
+      const height = isClock(t.value) ? 32 : 24;
+      for (const [x, y] of [
+        [left, t.y],
+        [left + textWidth, t.y],
+        [left, t.y + height],
+        [left + textWidth, t.y + height],
+      ]) {
+        assert.ok(
+          Math.hypot(x - 130, y - 130) <= inner,
+          `"${t.value}" reaches ${x},${y}, outside the ring's inside`
+        );
+      }
+    }
+  }
+
+  // The minute redraw on round Large Glucose only touches regions inside the ring,
+  // and repaints the clock, date and battery when they change.
+  {
+    const face = stubFace();
+    Object.assign(face.state, { fullScreen: true, battery: 85 });
+    const regions = [];
+    const texts = [];
+    Object.assign(face, {
+      render: {
+        width: 260,
+        height: 260,
+        begin: (x, y, w, h) => regions.push([x, y, w, h]),
+        end() {},
+        fillRectangle() {},
+        getTextWidth: (text) => String(text).length * 8,
+      },
+      colors: { ink: 0, white: 1, crimson: 0 },
+      footerState: {
+        clock: "10:00",
+        date: "Fri 13",
+        battery: "80%",
+        batteryWidth: 0,
+        clockWidth: 0,
+        connected: false,
+      },
+      text: (value) => texts.push(String(value)),
+      recoverRender: (error) => {
+        throw error;
+      },
+    });
+    face.isConnected = true;
+    face.diagnostics = face.newDiagnostics();
+    face.drawMinuteNow(new Date(2026, 10, 14, 11, 7));
+    assert.deepEqual(
+      texts.sort(),
+      ["11:07", "85%", "Sat 14"].sort(),
+      "clock, date and battery weren't repainted"
+    );
+    assert.ok(regions.length >= 3);
+    for (const [x, y, w, h] of regions) {
+      for (const [px, py] of [
+        [x, y],
+        [x + w, y],
+        [x, y + h],
+        [x + w, y + h],
+      ]) {
+        assert.ok(
+          Math.hypot(px - 130, py - 130) <= 118,
+          `redraw region ${x},${y},${w},${h} reaches the ring band`
+        );
+      }
+      // The patches are filled black: one starting above the black bottom (y 176)
+      // left a black bar over the white face at each minute.
+      assert.ok(
+        y >= 176,
+        `redraw region ${x},${y},${w},${h} starts above the black bottom`
+      );
+    }
+  }
+}
 console.log("Luped state machine regressions passed");

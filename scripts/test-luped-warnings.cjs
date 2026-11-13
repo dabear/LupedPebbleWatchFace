@@ -24,6 +24,7 @@ const context = {
       buzzes++;
     },
   },
+  screen: { round: false },
   console,
 };
 vm.createContext(context);
