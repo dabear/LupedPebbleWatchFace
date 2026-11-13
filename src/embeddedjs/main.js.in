@@ -276,6 +276,10 @@ function vibe() {
   Vibes.pattern(p);
 }
 
+// Time 2 Large Glucose: how far left of centre the number and the trend arrow sit.
+const LARGE_GLUCOSE_SHIFT = 8;
+const LARGE_ARROW_SHIFT = 4;
+
 class CrimsonBearWatchface {
   // Lifecycle and shared state
 
@@ -288,6 +292,8 @@ class CrimsonBearWatchface {
       status: new this.render.Font("Gothic-Regular", 14),
       footer: new this.render.Font("Bitham-Black", 30),
       fullGlucose: new this.render.Font("Bitham-Bold", 42),
+      // Large Glucose only. Digits only, so ERR and -- fall back to fullGlucose.
+      largeGlucose: new this.render.Font("Roboto-Bold", 49),
       fullDelta: new this.render.Font("Bitham-Black", 30),
       fullLabel: new this.render.Font("Gothic-Bold", 24),
     };
@@ -500,6 +506,11 @@ class CrimsonBearWatchface {
       : String(this.state.glucose);
   }
 
+  // The Large Glucose font, or fullGlucose when the text has more than digits.
+  largeGlucoseFont() {
+    return /^[0-9.]+$/.test(this.glucoseText()) ? this.fonts.largeGlucose : this.fonts.fullGlucose;
+  }
+
   deltaText() {
     if (this.stale) return "";
     if (this.state.delta == null) return "--";
@@ -669,7 +680,7 @@ class CrimsonBearWatchface {
     const decimalWidth = 9;
     const left = Math.round(cx - (wholeWidth + decimalWidth + fractionWidth) / 2);
     this.text(whole, font, color, left, y);
-    this.render.drawCircle(color, left + wholeWidth + 4, y + 34, 3, 0, 360);
+    this.render.drawCircle(color, left + wholeWidth + 4, y + (font === this.fonts.largeGlucose ? 41 : 34), 3, 0, 360);
     this.text(fraction, font, color, left + wholeWidth + decimalWidth, y);
   }
 
@@ -2048,7 +2059,7 @@ class CrimsonBearWatchface {
     const cy = height >> 1;
     this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
     this.drawVariantRing(cx, cy, cx + 3);
-    this.drawGlucose(cx, cy - 70, this.fonts.fullGlucose);
+    this.drawGlucose(cx, cy - 70, this.largeGlucoseFont());
     this.text(this.deltaText(), this.fonts.delta, this.stale ? this.colors.low : this.colors.ink, cx, cy - 18, true);
     // A request's answer takes the reading time's place for its minute (red when not done).
     const answer = this.result && this.resultText();
@@ -2133,7 +2144,11 @@ class CrimsonBearWatchface {
     const cy = contentHeight - radius;
     if (!preserveStatic) this.render.fillRectangle(this.colors.pale, 0, 0, width, height);
     this.drawVariantRing(cx, cy, radius);
-    this.drawGlucose(cx, cy - 23, this.fonts.fullGlucose);
+    // The 49 px font sits 8 px higher to keep its gap above the delta. Number
+    // and arrow sit left of centre: a 45-degree arrow clears the ring, and a
+    // double arrow the last digit of 400.
+    const glucoseFont = this.largeGlucoseFont();
+    this.drawGlucose(cx - LARGE_GLUCOSE_SHIFT, glucoseFont === this.fonts.largeGlucose ? cy - 31 : cy - 23, glucoseFont);
     this.text(
       this.deltaText(),
       this.fonts.delta,
@@ -2155,7 +2170,7 @@ class CrimsonBearWatchface {
     );
     if (!this.stale)
       this.arrow(
-        cx + Math.round(radius * 0.67),
+        cx + Math.round(radius * 0.67) - LARGE_ARROW_SHIFT,
         cy,
         this.state.direction,
         this.colors.crimson,
