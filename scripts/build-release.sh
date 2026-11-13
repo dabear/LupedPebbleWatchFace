@@ -200,14 +200,18 @@ if [[ -z "$pebble_bin" || ! -x "$pebble_bin" ]]; then
   exit 1
 fi
 
+# Store screenshot platforms, in the order the store shows them.
+screenshot_platforms=(emery gabbro)
+
 # Release metadata per variant; a new variant adds its own case here.
 package_file="variants/$variant/package.json"
 case "$variant" in
   luped)
     artifact="build/luped-cgm.pbw"
     display_name="Luped CGM"
-    screenshot_prefix="emery_luped"
-    # The two store screenshots: assets/<prefix>_<name>_screenshot.png.
+    screenshot_prefix="luped"
+    # The store screenshots: assets/<platform>_<prefix>_<name>_screenshot.png,
+    # for each platform in screenshot_platforms that has them.
     screenshot_names=(graph fullscreen)
     store_icon_dir="variants/luped/assets"
     store_icon_prefix="luped"
@@ -217,7 +221,7 @@ case "$variant" in
   lupedhelper)
     artifact="build/luped-remote.pbw"
     display_name="Luped Remote"
-    screenshot_prefix="emery_lupedhelper"
+    screenshot_prefix="lupedhelper"
     screenshot_names=(main confirm)
     store_icon_dir="variants/lupedhelper/assets"
     store_icon_prefix="lupedhelper"
@@ -514,16 +518,27 @@ if [[ "$do_publish" == true ]]; then
   echo "Pushing commit $(git rev-parse --short HEAD) to GitHub..."
   git push origin HEAD:main
 
-  echo "Publishing $version to the RePebble store..."
+  # --replace-screenshots drops every platform's old screenshots, so send all
+  # platforms' each time.
+  screenshot_files=()
+  for platform in "${screenshot_platforms[@]}"; do
+    for name in "${screenshot_names[@]}"; do
+      file="$repo_root/assets/${platform}_${screenshot_prefix}_${name}_screenshot.png"
+      [[ -f "$file" ]] && screenshot_files+=("$file")
+    done
+  done
+  if [[ ! -f "$repo_root/assets/emery_${screenshot_prefix}_${screenshot_names[0]}_screenshot.png" ]]; then
+    echo "Missing assets/emery_${screenshot_prefix}_${screenshot_names[0]}_screenshot.png." >&2
+    exit 1
+  fi
+  echo "Publishing $version to the RePebble store (screenshots: ${#screenshot_files[@]})..."
   (
     cd "$stage"
     "$pebble_bin" publish \
       --is-published \
       --non-interactive \
       --no-gif-all-platforms \
-      --screenshots \
-        "$repo_root/assets/${screenshot_prefix}_${screenshot_names[0]}_screenshot.png" \
-        "$repo_root/assets/${screenshot_prefix}_${screenshot_names[1]}_screenshot.png" \
+      --screenshots "${screenshot_files[@]}" \
       --replace-screenshots \
       --description "$store_description" \
       --icon-small "$repo_root/$store_icon_dir/$store_icon_prefix-store-icon-small.png" \
